@@ -111,9 +111,22 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
     EX: 'endCompat'
   };
 
+  function splitCombinedOperations(operations) {
+    // Two operations can be combined together, trying to find which two
+    // operations were concatenated.
+    for (var i = operations.length - 1; i > 0; i--) {
+      var op1 = operations.substring(0, i), op2 = operations.substring(i);
+      if (op1 in OP_MAP && op2 in OP_MAP)
+        return [op1, op2]; // operations found
+    }
+    return null;
+  }
+
   PartialEvaluator.prototype = {
-    getOperatorList: function partialEvaluatorGetOperatorList(stream, resources,
-                                                      dependency, queue) {
+    getOperatorList: function PartialEvaluator_getOperatorList(stream,
+                                                               resources,
+                                                               dependency,
+                                                               queue) {
 
       var self = this;
       var xref = this.xref;
@@ -131,24 +144,23 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         }
       }
 
-      function handleSetFont(fontName, fontRef) {
+      function handleSetFont(fontName, font) {
         var loadedName = null;
 
         var fontRes = resources.get('Font');
 
         assert(fontRes, 'fontRes not available');
 
-        fontRes = xref.fetchIfRef(fontRes);
-        fontRef = fontRef || fontRes.get(fontName);
-        var font = xref.fetchIfRef(fontRef);
+        font = xref.fetchIfRef(font) || fontRes.get(fontName);
         assertWellFormed(isDict(font));
+        ++self.objIdCounter;
         if (!font.translated) {
           font.translated = self.translateFont(font, xref, resources,
                                                dependency);
           if (font.translated) {
             // keep track of each font we translated so the caller can
             // load them asynchronously before calling display on a page
-            loadedName = 'font_' + uniquePrefix + (++self.objIdCounter);
+            loadedName = 'font_' + uniquePrefix + self.objIdCounter;
             font.translated.properties.loadedName = loadedName;
             font.loadedName = loadedName;
 
@@ -250,31 +262,37 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       var fnArray = queue.fnArray, argsArray = queue.argsArray;
       var dependencyArray = dependency || [];
 
-      resources = xref.fetchIfRef(resources) || new Dict();
-      var xobjs = xref.fetchIfRef(resources.get('XObject')) || new Dict();
-      var patterns = xref.fetchIfRef(resources.get('Pattern')) || new Dict();
-      var parser = new Parser(new Lexer(stream), false);
+      resources = resources || new Dict();
+      var xobjs = resources.get('XObject') || new Dict();
+      var patterns = resources.get('Pattern') || new Dict();
+      var parser = new Parser(new Lexer(stream), false, xref);
       var res = resources;
+      var hasNextObj = false, nextObj;
       var args = [], obj;
-      var getObjBt = function getObjBt() {
-        parser = this.oldParser;
-        return { name: 'BT' };
-      };
       var TILING_PATTERN = 1, SHADING_PATTERN = 2;
 
-      while (!isEOF(obj = parser.getObj())) {
+      while (true) {
+        if (hasNextObj) {
+          obj = nextObj;
+          hasNextObj = false;
+        } else {
+          obj = parser.getObj();
+          if (isEOF(obj))
+            break;
+        }
+
         if (isCmd(obj)) {
           var cmd = obj.cmd;
           var fn = OP_MAP[cmd];
           if (!fn) {
             // invalid content command, trying to recover
-            if (cmd.substr(-2) == 'BT') {
-              fn = OP_MAP[cmd.substr(0, cmd.length - 2)];
-              // feeding 'BT' on next interation
-              parser = {
-                getObj: getObjBt,
-                oldParser: parser
-              };
+            var cmds = splitCombinedOperations(cmd);
+            if (cmds) {
+              cmd = cmds[0];
+              fn = OP_MAP[cmd];
+              // feeding other command on the next interation
+              hasNextObj = true;
+              nextObj = Cmd.get(cmds[1]);
             }
           }
           assertWellFormed(fn, 'Unknown command "' + cmd + '"');
@@ -285,7 +303,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
             var patternName = args[args.length - 1];
             // SCN/scn applies patterns along with normal colors
             if (isName(patternName)) {
-              var pattern = xref.fetchIfRef(patterns.get(patternName.name));
+              var pattern = patterns.get(patternName.name);
               if (pattern) {
                 var dict = isStream(pattern) ? pattern.dict : pattern;
                 var typeNum = dict.get('PatternType');
@@ -303,10 +321,10 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                   args = TilingPattern.getIR(operatorList, dict, args);
                 }
                 else if (typeNum == SHADING_PATTERN) {
-                  var shading = xref.fetchIfRef(dict.get('Shading'));
+                  var shading = dict.get('Shading');
                   var matrix = dict.get('Matrix');
-                  var pattern = Pattern.parseShading(shading, matrix, xref, res,
-                                                                  null /*ctx*/);
+                  var pattern = Pattern.parseShading(shading, matrix, xref,
+                                                     res);
                   args = pattern.getIR();
                 } else {
                   error('Unkown PatternType ' + typeNum);
@@ -318,7 +336,6 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
             var name = args[0].name;
             var xobj = xobjs.get(name);
             if (xobj) {
-              xobj = xref.fetchIfRef(xobj);
               assertWellFormed(isStream(xobj), 'XObject should be a stream');
 
               var type = xobj.dict.get('Subtype');
@@ -369,28 +386,27 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
               args = [ColorSpace.parseToIR(args[0], xref, resources)];
               break;
             case 'shadingFill':
-              var shadingRes = xref.fetchIfRef(res.get('Shading'));
+              var shadingRes = res.get('Shading');
               if (!shadingRes)
                 error('No shading resource found');
 
-              var shading = xref.fetchIfRef(shadingRes.get(args[0].name));
+              var shading = shadingRes.get(args[0].name);
               if (!shading)
                 error('No shading object found');
 
-              var shadingFill = Pattern.parseShading(shading, null, xref, res,
-                                                      null);
+              var shadingFill = Pattern.parseShading(shading, null, xref, res);
               var patternIR = shadingFill.getIR();
               args = [patternIR];
               fn = 'shadingFill';
               break;
             case 'setGState':
               var dictName = args[0];
-              var extGState = xref.fetchIfRef(resources.get('ExtGState'));
+              var extGState = resources.get('ExtGState');
 
               if (!isDict(extGState) || !extGState.has(dictName.name))
                 break;
 
-              var gsState = xref.fetchIfRef(extGState.get(dictName.name));
+              var gsState = extGState.get(dictName.name);
 
               // This array holds the converted/processed state data.
               var gsStateObj = [];
@@ -451,7 +467,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           args = [];
         } else if (obj != null) {
           assertWellFormed(args.length <= 33, 'Too many arguments');
-          args.push(obj);
+          args.push(obj instanceof Dict ? obj.getAll() : obj);
         }
       }
 
@@ -465,11 +481,11 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       var toUnicode = dict.get('ToUnicode') ||
         baseDict.get('ToUnicode');
       if (toUnicode)
-        properties.toUnicode = this.readToUnicode(toUnicode, xref);
+        properties.toUnicode = this.readToUnicode(toUnicode, xref, properties);
 
       if (properties.composite) {
         // CIDSystemInfo helps to match CID to glyphs
-        var cidSystemInfo = xref.fetchIfRef(dict.get('CIDSystemInfo'));
+        var cidSystemInfo = dict.get('CIDSystemInfo');
         if (isDict(cidSystemInfo)) {
           properties.cidSystemInfo = {
             registry: cidSystemInfo.get('Registry'),
@@ -478,7 +494,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           };
         }
 
-        var cidToGidMap = xref.fetchIfRef(dict.get('CIDToGIDMap'));
+        var cidToGidMap = dict.get('CIDToGIDMap');
         if (isStream(cidToGidMap))
           properties.cidToGidMap = this.readCidToGidMap(cidToGidMap);
       }
@@ -489,7 +505,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                          Encodings.symbolsEncoding : Encodings.StandardEncoding;
       var hasEncoding = dict.has('Encoding');
       if (hasEncoding) {
-        var encoding = xref.fetchIfRef(dict.get('Encoding'));
+        var encoding = dict.get('Encoding');
         if (isDict(encoding)) {
           var baseName = encoding.get('BaseEncoding');
           if (baseName)
@@ -521,9 +537,9 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       properties.hasEncoding = hasEncoding;
     },
 
-    readToUnicode:
-      function partialEvaluatorReadToUnicode(toUnicode, xref) {
-      var cmapObj = xref.fetchIfRef(toUnicode);
+    readToUnicode: function PartialEvaluator_readToUnicode(toUnicode, xref,
+                                                           properties) {
+      var cmapObj = toUnicode;
       var charToUnicode = [];
       if (isName(cmapObj)) {
         var isIdentityMap = cmapObj.name.substr(0, 9) == 'Identity-';
@@ -611,6 +627,10 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
             }
           } else if (octet == 0x3E) {
             if (token.length) {
+              // XXX guessing chars size by checking number size in the CMap
+              if (token.length <= 2 && properties.composite)
+                properties.wideChars = false;
+
               if (token.length <= 4) {
                 // parsing hex number
                 tokens.push(parseInt(token, 16));
@@ -641,8 +661,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       }
       return charToUnicode;
     },
-    readCidToGidMap:
-      function partialEvaluatorReadCidToGidMap(cidToGidStream) {
+    readCidToGidMap: function PartialEvaluator_readCidToGidMap(cidToGidStream) {
       // Extract the encoding from the CIDToGIDMap
       var glyphsData = cidToGidStream.getBytes();
 
@@ -659,16 +678,16 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       return result;
     },
 
-    extractWidths: function partialEvaluatorWidths(dict,
+    extractWidths: function PartialEvaluator_extractWidths(dict,
                                                    xref,
                                                    descriptor,
                                                    properties) {
       var glyphsWidths = [];
       var defaultWidth = 0;
       if (properties.composite) {
-        defaultWidth = xref.fetchIfRef(dict.get('DW')) || 1000;
+        defaultWidth = dict.get('DW') || 1000;
 
-        var widths = xref.fetchIfRef(dict.get('W'));
+        var widths = dict.get('W');
         if (widths) {
           var start = 0, end = 0;
           for (var i = 0, ii = widths.length; i < ii; i++) {
@@ -689,7 +708,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         }
       } else {
         var firstChar = properties.firstChar;
-        var widths = xref.fetchIfRef(dict.get('Widths'));
+        var widths = dict.get('Widths');
         if (widths) {
           var j = firstChar;
           for (var i = 0, ii = widths.length; i < ii; i++)
@@ -711,7 +730,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       properties.widths = glyphsWidths;
     },
 
-    getBaseFontMetrics: function getBaseFontMetrics(name) {
+    getBaseFontMetrics: function PartialEvaluator_getBaseFontMetrics(name) {
       var defaultWidth = 0, widths = [];
       var glyphWidths = Metrics[stdFontMap[name] || name];
       if (isNum(glyphWidths)) {
@@ -726,8 +745,10 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       };
     },
 
-    translateFont: function partialEvaluatorTranslateFont(dict, xref, resources,
-                                                          dependency) {
+    translateFont: function PartialEvaluator_translateFont(dict,
+                                                           xref,
+                                                           resources,
+                                                           dependency) {
       var baseDict = dict;
       var type = dict.get('Subtype');
       assertWellFormed(isName(type), 'invalid font Subtype');
@@ -742,10 +763,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         if (!df)
           return null;
 
-        if (isRef(df))
-          df = xref.fetch(df);
-
-        dict = xref.fetchIfRef(isRef(df) ? df : df[0]);
+        dict = isArray(df) ? xref.fetchIfRef(df[0]) : df;
 
         type = dict.get('Subtype');
         assertWellFormed(isName(type), 'invalid font Subtype');
@@ -753,7 +771,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       }
       var maxCharIndex = composite ? 0xFFFF : 0xFF;
 
-      var descriptor = xref.fetchIfRef(dict.get('FontDescriptor'));
+      var descriptor = dict.get('FontDescriptor');
       if (!descriptor) {
         if (type.name == 'Type3') {
           // FontDescriptor is only required for Type3 fonts when the document
@@ -802,9 +820,9 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       // to ignore this rule when a variant of a standart font is used.
       // TODO Fill the width array depending on which of the base font this is
       // a variant.
-      var firstChar = xref.fetchIfRef(dict.get('FirstChar')) || 0;
-      var lastChar = xref.fetchIfRef(dict.get('LastChar')) || maxCharIndex;
-      var fontName = xref.fetchIfRef(descriptor.get('FontName'));
+      var firstChar = dict.get('FirstChar') || 0;
+      var lastChar = dict.get('LastChar') || maxCharIndex;
+      var fontName = descriptor.get('FontName');
       // Some bad pdf's have a string as the font name.
       if (isString(fontName))
         fontName = new Name(fontName);
@@ -812,19 +830,14 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
       var fontFile = descriptor.get('FontFile', 'FontFile2', 'FontFile3');
       if (fontFile) {
-        fontFile = xref.fetchIfRef(fontFile);
         if (fontFile.dict) {
           var subtype = fontFile.dict.get('Subtype');
           if (subtype)
             subtype = subtype.name;
 
           var length1 = fontFile.dict.get('Length1');
-          if (!isInt(length1))
-            length1 = xref.fetchIfRef(length1);
 
           var length2 = fontFile.dict.get('Length2');
-          if (!isInt(length2))
-            length2 = xref.fetchIfRef(length2);
         }
       }
 
@@ -835,6 +848,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         length1: length1,
         length2: length2,
         composite: composite,
+        wideChars: composite,
         fixedPitch: false,
         fontMatrix: dict.get('FontMatrix') || IDENTITY_MATRIX,
         firstChar: firstChar || 0,
@@ -853,12 +867,11 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
       if (type.name === 'Type3') {
         properties.coded = true;
-        var charProcs = xref.fetchIfRef(dict.get('CharProcs'));
-        var fontResources = xref.fetchIfRef(dict.get('Resources')) || resources;
-        properties.resources = fontResources;
+        var charProcs = dict.get('CharProcs').getAll();
+        var fontResources = dict.get('Resources') || resources;
         properties.charProcOperatorList = {};
-        for (var key in charProcs.map) {
-          var glyphStream = xref.fetchIfRef(charProcs.map[key]);
+        for (var key in charProcs) {
+          var glyphStream = charProcs[key];
           properties.charProcOperatorList[key] =
             this.getOperatorList(glyphStream, fontResources, dependency);
         }

@@ -18,6 +18,7 @@
 !cmykjpeg.pdf
 !issue840.pdf
 !scan-bad.pdf
+!pdfjsbad1586.pdf
 !freeculture.pdf
 !pdfkit_compressed.pdf
 !TAMReview.pdf
@@ -30,3 +31,6 @@
 !zerowidthline.pdf
 !issue1002.pdf
 !issue925.pdf
+!gradientfill.pdf
+!basicapi.pdf
+!mixedfonts.pdf
