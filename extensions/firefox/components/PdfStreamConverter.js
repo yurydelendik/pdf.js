@@ -58,6 +58,9 @@ ChromeActions.prototype = {
       return '{}';
     return application.prefs.getValue(EXT_PREFIX + '.database', '{}');
   },
+  getLocale: function() {
+    return application.prefs.getValue('general.useragent.locale', 'en-US');
+  },
   pdfBugEnabled: function() {
     return application.prefs.getValue(EXT_PREFIX + '.pdfBugEnabled', false);
   }
@@ -153,7 +156,7 @@ PdfStreamConverter.prototype = {
                     'resource://pdf.js/web/viewer.html', null, null);
 
     var listener = this.listener;
-    // Proxy all the requst observer calls, when it gets to onStopRequst
+    // Proxy all the request observer calls, when it gets to onStopRequest
     // we can get the dom window.
     var proxy = {
       onStartRequest: function() {
