@@ -397,11 +397,6 @@ var WorkerTransport = (function WorkerTransportClosure() {
     // Right now, the requirement is, that an Uint8Array is still an Uint8Array
     // as it arrives on the worker. Chrome added this with version 15.
     if (!globalScope.PDFJS.disableWorker && typeof Worker !== 'undefined') {
-      var workerSrc = PDFJS.workerSrc;
-      if (typeof workerSrc === 'undefined') {
-        error('No PDFJS.workerSrc specified');
-      }
-
       try {
         var worker;
         if (PDFJS.isFirefoxExtension) {
@@ -411,7 +406,14 @@ var WorkerTransport = (function WorkerTransportClosure() {
           bb.append(document.querySelector('#PDFJS_SCRIPT_TAG').textContent);
           var blobUrl = window.URL.createObjectURL(bb.getBlob());
           worker = new Worker(blobUrl);
+        } else if (PDFJS.worker) {
+          // External worker defined
+          worker = PDFJS.worker;
         } else {
+          var workerSrc = PDFJS.workerSrc;
+          if (typeof workerSrc === 'undefined')
+            error('No PDFJS.workerSrc specified');
+
           // Some versions of FF can't create a worker on localhost, see:
           // https://bugzilla.mozilla.org/show_bug.cgi?id=683280
           worker = new Worker(workerSrc);

@@ -3,7 +3,7 @@
 
 'use strict';
 
-var globalScope = (typeof window === 'undefined') ? this : window;
+var globalScope = (typeof window === 'undefined') ? (this || {}) : window;
 
 var isWorker = (typeof window == 'undefined');
 
@@ -14,7 +14,7 @@ var verbosity = WARNINGS;
 // In production, it will be declared outside a global wrapper
 // In development, it will be declared here
 if (!globalScope.PDFJS) {
-  globalScope.PDFJS = {};
+  globalScope.PDFJS = typeof PDFJS === 'undefined' ? {} : PDFJS;
 }
 
 // getPdf()

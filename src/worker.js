@@ -293,6 +293,8 @@ var workerConsole = {
   }
 };
 
+PDFJS.rootScope = globalScope;
+
 // Worker thread?
 if (typeof window === 'undefined') {
   globalScope.console = workerConsole;
@@ -301,14 +303,14 @@ if (typeof window === 'undefined') {
   // throw an exception which will be forwarded on automatically.
   PDFJS.LogManager.addLogger({
     warn: function(msg) {
-      postMessage({
+      globalScope.postMessage({
         action: '_warn',
         data: msg
       });
     }
   });
 
-  var handler = new MessageHandler('worker_processor', this);
+  var handler = new MessageHandler('worker_processor', globalScope);
   WorkerMessageHandler.setup(handler);
 }
 

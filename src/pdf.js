@@ -3,6 +3,10 @@
 
 var PDFJS = {};
 
+// export as module
+if (typeof exports !== 'undefined')
+  exports.pdfjs = PDFJS;
+
 (function pdfjsWrapper() {
   // Use strict in our context only - users might not want it
   'use strict';
