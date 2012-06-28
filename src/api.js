@@ -18,6 +18,8 @@
  * @return {Promise} A promise that is resolved with {PDFDocumentProxy} object.
  */
 PDFJS.getDocument = function getDocument(source) {
+  var workerInitializedPromise, workerReadyPromise, transport;
+
   if (typeof source === 'string') {
     source = { url: source };
   } else if (isArrayBuffer(source)) {
@@ -30,11 +32,13 @@ PDFJS.getDocument = function getDocument(source) {
   if (!source.url && !source.data)
     error('Invalid parameter array, need either .data or .url');
 
-  var promise = new PDFJS.Promise();
-  var transport = new WorkerTransport(promise);
-  transport.fetchDocument(source);
-
-  return promise;
+  workerInitializedPromise = new PDFJS.Promise();
+  workerReadyPromise = new PDFJS.Promise();
+  transport = new WorkerTransport(workerInitializedPromise, workerReadyPromise);
+  workerInitializedPromise.then(function transportInitialized() {
+    transport.fetchDocument(source);
+  });
+  return workerReadyPromise;
 };
 
 /**
@@ -203,7 +207,11 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
      * {
      *   canvasContext(required): A 2D context of a DOM Canvas object.,
      *   textLayer(optional): An object that has beginLayout, endLayout, and
-     *                        appendText functions.
+     *                        appendText functions.,
+     *   continueCallback(optional): A function that will be called each time
+     *                               the rendering is paused.  To continue
+     *                               rendering call the function that is the
+     *                               first argument to the callback.
      * }.
      * @return {Promise} A promise that is resolved when the page finishes
      * rendering.
@@ -239,6 +247,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         else
           promise.resolve();
       };
+      var continueCallback = params.continueCallback;
 
       // Once the operatorList and fonts are loaded, do the actual rendering.
       this.displayReadyPromise.then(
@@ -251,7 +260,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
           var gfx = new CanvasGraphics(params.canvasContext,
             this.objs, params.textLayer);
           try {
-            this.display(gfx, params.viewport, complete);
+            this.display(gfx, params.viewport, complete, continueCallback);
           } catch (e) {
             complete(e);
           }
@@ -309,7 +318,8 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
     /**
      * For internal use only.
      */
-    display: function PDFPageProxy_display(gfx, viewport, callback) {
+    display: function PDFPageProxy_display(gfx, viewport, callback,
+                                           continueCallback) {
       var stats = this.stats;
       stats.time('Rendering');
 
@@ -325,10 +335,16 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         stepper.nextBreakPoint = stepper.getNextBreakPoint();
       }
 
+      var continueWrapper;
+      if (continueCallback)
+        continueWrapper = function() { continueCallback(next); }
+      else
+        continueWrapper = next;
+
       var self = this;
       function next() {
-        startIdx =
-          gfx.executeOperatorList(operatorList, startIdx, next, stepper);
+        startIdx = gfx.executeOperatorList(operatorList, startIdx,
+                                           continueWrapper, stepper);
         if (startIdx == length) {
           gfx.endDrawing();
           stats.timeEnd('Rendering');
@@ -336,7 +352,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
           if (callback) callback();
         }
       }
-      next();
+      continueWrapper();
     },
     /**
      * @return {Promise} That is resolved with the a {string} that is the text
@@ -383,8 +399,8 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
  * For internal use only.
  */
 var WorkerTransport = (function WorkerTransportClosure() {
-  function WorkerTransport(promise) {
-    this.workerReadyPromise = promise;
+  function WorkerTransport(workerInitializedPromise, workerReadyPromise) {
+    this.workerReadyPromise = workerReadyPromise;
     this.objs = new PDFObjects();
 
     this.pageCache = [];
@@ -430,6 +446,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
             globalScope.PDFJS.disableWorker = true;
             this.setupFakeWorker();
           }
+          workerInitializedPromise.resolve();
         }.bind(this));
 
         var testObj = new Uint8Array(1);
@@ -445,6 +462,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
     // Thus, we fallback to a faked worker.
     globalScope.PDFJS.disableWorker = true;
     this.setupFakeWorker();
+    workerInitializedPromise.resolve();
   }
   WorkerTransport.prototype = {
     destroy: function WorkerTransport_destroy() {
