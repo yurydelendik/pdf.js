@@ -29,9 +29,9 @@ var kMaxScale = 4.0;
 var kImageDirectory = './images/';
 var kSettingsMemory = 20;
 var RenderingStates = {
-  INITIAL: 0,
-  RUNNING: 1,
-  PAUSED: 2,
+  INITIAL:  0,
+  RUNNING:  1,
+  PAUSED:   2,
   FINISHED: 3
 };
 
