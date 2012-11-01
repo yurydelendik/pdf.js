@@ -239,5 +239,56 @@ limitations under the License.
 
     </div> <!-- outerContainer -->
     <div id="printContainer"></div>
+    <svg xmlns="http://www.w3.org/2000/svg" version="1.1" style="display: block; height: 0;">
+      <!-- based on http://dbaron.org/log/20110430-invert-colors -->
+      <defs>
+        <filter id="invertColors" x="0%" y="0%" width="100%" height="100%"
+                style="color-interpolation-filters: sRGB">
+	        <feColorMatrix result="red" in="SourceGraphic" type="matrix"
+	                       values=" 1  0  0  0  0
+	                                1  0  0  0  0
+	                                1  0  0  0  0
+	                                0  0  0  0  1" />
+
+	        <feColorMatrix result="green" in="SourceGraphic" type="matrix"
+	                       values=" 0  1  0  0  0
+	                                0  1  0  0  0
+	                                0  1  0  0  0
+	                                0  0  0  0  1" />
+
+	        <feColorMatrix result="blue" in="SourceGraphic" type="matrix"
+	                       values=" 0  0  1  0  0
+	                                0  0  1  0  0
+	                                0  0  1  0  0
+	                                0  0  0  0  1" />
+
+	        <feBlend result="minredgreen" in="red" in2="green" mode="darken" />
+	        <feBlend result="min" in="minredgreen" in2="blue" mode="darken" />
+
+	        <feBlend result="maxredgreen" in="red" in2="green" mode="lighten" />
+	        <feBlend result="max" in="maxredgreen" in2="blue" mode="lighten" />
+
+	        <feComponentTransfer result="oneminusmin" in="min">
+	          <feFuncR type="linear" intercept="1" slope="-1" />
+	          <feFuncG type="linear" intercept="1" slope="-1" />
+	          <feFuncB type="linear" intercept="1" slope="-1" />
+	        </feComponentTransfer>
+	        <feComposite result="aminusmin" operator="arithmetic"
+	                     in="SourceGraphic" in2="oneminusmin"
+	                     k1="0" k2="1" k3="1" k4="-1" />
+	        <feComposite result="colorresult" operator="arithmetic"
+	                     in="aminusmin" in2="max"
+	                     k1="0" k2="1" k3="-1" k4="1" />
+
+	        <feComposite operator="in" in="colorresult" in2="SourceAlpha" />
+        </filter>
+      </defs>
+    </svg>
+    <style type="text/css">
+      /* this style is using HTML page resource, keeping it inlined */
+      .invertColors .page > canvas {
+        filter: url(#invertColors);
+      }
+    </style>
   </body>
 </html>

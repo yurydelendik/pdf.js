@@ -1320,6 +1320,18 @@ canvas {
   color: black;
 }
 
+.invertColors .page {
+  background-color: black;
+  border: solid 1px #FFF;
+  -webkit-box-shadow: none;
+  -moz-box-shadow: none;
+  box-shadow: none;
+}
+
+.invertColors .page > canvas {
+  background-color: white;
+}
+
 @page {
   margin: 0;
 }

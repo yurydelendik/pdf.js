@@ -878,6 +878,23 @@ var PDFView = {
     return support;
   },
 
+  get useInvertedColors() {
+    // testing if currentColor is set to white to detect high contrast theme
+    var tempCanvas = document.createElement('canvas');
+    document.body.appendChild(tempCanvas);
+    var ctx = tempCanvas.getContext('2d');
+    ctx.fillStyle = 'currentColor';
+    ctx.fillRect(0, 0, 5, 5); // draw small rectange 5x5
+    var data = ctx.getImageData(2, 2, 1, 1).data; // middle single pixel
+    document.body.removeChild(tempCanvas);
+    var invertedColors = data[0] > 128; // checking if ligther than gray
+    Object.defineProperty(this, 'useInvertedColors', { value: invertedColors,
+                                                       enumerable: true,
+                                                       configurable: true,
+                                                       writable: false });
+    return invertedColors;
+  },
+
   initPassiveLoading: function pdfViewInitPassiveLoading() {
     if (!PDFView.loadingBar) {
       PDFView.loadingBar = new ProgressBar('#loadingBar', {});
@@ -1983,7 +2000,6 @@ var PageView = function pageView(container, pdfPage, id, scale,
     var canvas = document.createElement('canvas');
     canvas.id = 'page' + this.id;
     canvas.mozOpaque = true;
-    div.appendChild(canvas);
     this.canvas = canvas;
 
     var textLayerDiv = null;
@@ -2030,6 +2046,8 @@ var PageView = function pageView(container, pdfPage, id, scale,
         div.removeChild(self.loadingIconDiv);
         delete self.loadingIconDiv;
       }
+
+      div.appendChild(self.canvas);
 
       if (error) {
         PDFView.error(mozL10n.get('rendering_error', null,
@@ -2685,10 +2703,11 @@ var TextLayerBuilder = function textLayerBuilder(textLayerDiv, pageIdx) {
 
 document.addEventListener('DOMContentLoaded', function webViewerLoad(evt) {
   PDFView.initialize();
-  var params = PDFView.parseQueryString(document.location.search.substring(1));
+  var hash = document.location.hash.substring(1);
+  var hashParams = PDFView.parseQueryString(hash);
 
 //#if !(FIREFOX || MOZCENTRAL)
-  var file = params.file || kDefaultURL;
+  var file = hashParams.file || kDefaultURL;
 //#else
 //var file = window.location.toString()
 //#endif
@@ -2704,9 +2723,6 @@ document.addEventListener('DOMContentLoaded', function webViewerLoad(evt) {
 //#endif
 
   // Special debugging flags in the hash section of the URL.
-  var hash = document.location.hash.substring(1);
-  var hashParams = PDFView.parseQueryString(hash);
-
   if ('disableWorker' in hashParams)
     PDFJS.disableWorker = (hashParams['disableWorker'] === 'true');
 
@@ -2716,6 +2732,12 @@ document.addEventListener('DOMContentLoaded', function webViewerLoad(evt) {
     locale = hashParams['locale'];
   mozL10n.language.code = locale;
 //#endif
+
+  var invertedColorsSelected = 'invertColors' in hashParams ?
+    (hashParams['invertColors'] === 'true') : PDFView.useInvertedColors;
+  if (invertedColorsSelected) {
+    document.getElementById('outerContainer').classList.add('invertColors');
+  }
 
   if ('textLayer' in hashParams) {
     switch (hashParams['textLayer']) {
