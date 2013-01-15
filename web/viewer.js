@@ -2931,7 +2931,7 @@ document.addEventListener('DOMContentLoaded', function webViewerLoad(evt) {
 //#endif
 
 //#if !B2G
-  PDFView.open(file, 0);
+  // PDFView.open(file, 0);
 //#endif
 }, true);
 
@@ -2996,6 +2996,11 @@ function updateViewarea() {
   });
   var href = PDFView.getAnchorUrl(pdfOpenParams);
   document.getElementById('viewBookmark').href = href;
+
+  if (isMaster) {
+    document.getElementById('chat').contentWindow.postMessage({
+      pdfjsAction: 'navigate', hash: pdfOpenParams }, '*');
+  }
 }
 
 window.addEventListener('resize', function webViewerResize(evt) {
@@ -3011,6 +3016,23 @@ window.addEventListener('hashchange', function webViewerHashchange(evt) {
   PDFView.setHash(document.location.hash.substring(1));
 });
 
+var isMaster = false;
+window.addEventListener('message', function (evt) {
+  if ('pdfjsAction' in evt.data) {
+    switch (evt.data.pdfjsAction) {
+    case 'open':
+      PDFView.open(stringToBytes(atob(evt.data.data)), 0);
+      isMaster = evt.data.isMaster;
+      break;
+    case 'navigate':
+      if (isMaster)
+        break;
+      PDFView.setHash(evt.data.hash.substring(1));
+      break;
+    }
+  }
+});
+
 window.addEventListener('change', function webViewerChange(evt) {
   var files = evt.target.files;
   if (!files || files.length == 0)
@@ -3021,7 +3043,8 @@ window.addEventListener('change', function webViewerChange(evt) {
   fileReader.onload = function webViewerChangeFileReaderOnload(evt) {
     var buffer = evt.target.result;
     var uint8Array = new Uint8Array(buffer);
-    PDFView.open(uint8Array, 0);
+    document.getElementById('chat').contentWindow.postMessage({
+      pdfjsAction: 'open', data: btoa(bytesToString(uint8Array)) }, '*');
   };
 
   var file = files[0];
