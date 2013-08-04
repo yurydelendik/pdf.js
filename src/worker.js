@@ -178,6 +178,18 @@ var WorkerMessageHandler = {
         return pdfManagerPromise;
       }
 
+      if (PDFJS.requestData) {
+        PDFJS.requestData(source.url, function (error, data) {
+          if (error) {
+            pdfManagerPromise.reject(error);
+            return;
+          }
+          pdfManager = new LocalPdfManager(data, source.password);
+          pdfManagerPromise.resolve();
+        });
+        return pdfManagerPromise;
+      }
+
       var networkManager = new NetworkManager(source.url, {
         httpHeaders: source.httpHeaders
       });
@@ -258,6 +270,12 @@ var WorkerMessageHandler = {
         handler.send('test', false);
         return;
       }
+
+      if (typeof XMLHttpRequest === 'undefined') {
+        handler.send('test', true);
+        return;
+      }
+
       // check if the response property is supported by xhr
       var xhr = new XMLHttpRequest();
       var responseExists = 'response' in xhr;

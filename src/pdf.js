@@ -20,6 +20,13 @@ if (typeof PDFJS === 'undefined') {
   (typeof window !== 'undefined' ? window : this).PDFJS = {};
 }
 
+if (typeof exports !== 'undefined') {
+  if (typeof PDFJS === 'undefined') {
+    PDFJS = this.PDFJS
+  }
+  exports.PDFJS = PDFJS;
+}
+
 //#if BUNDLE_VERSION
 //#expand PDFJS.version = '__BUNDLE_VERSION__';
 //#endif

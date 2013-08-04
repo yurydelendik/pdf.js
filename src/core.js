@@ -37,6 +37,7 @@ if (!globalScope.PDFJS) {
   globalScope.PDFJS = {};
 }
 
+globalScope.PDFJS.globalScope = globalScope;
 globalScope.PDFJS.pdfBug = false;
 
 

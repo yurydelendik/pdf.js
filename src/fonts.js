@@ -7240,7 +7240,7 @@ var CFFCompiler = (function CFFCompilerClosure() {
 
 // Workaround for seac on Windows.
 (function checkSeacSupport() {
-  if (/Windows/.test(navigator.userAgent)) {
+  if (typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent)) {
     SEAC_ANALYSIS_ENABLED = true;
   }
 })();
@@ -7249,7 +7249,8 @@ var CFFCompiler = (function CFFCompilerClosure() {
 // http://code.google.com/p/chromium/issues/detail?id=122465
 // https://github.com/mozilla/pdf.js/issues/1689
 (function checkChromeWindows() {
-  if (/Windows.*Chrome/.test(navigator.userAgent)) {
+  if (typeof navigator !== 'undefined' &&
+      /Windows.*Chrome/.test(navigator.userAgent)) {
     SYMBOLIC_FONT_GLYPH_OFFSET = 0xF100;
   }
 })();
