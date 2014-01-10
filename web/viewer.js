@@ -519,13 +519,21 @@ var PDFView = {
     this.pdfDocument = null;
     var self = this;
     self.loading = true;
-    var passwordNeeded = function passwordNeeded(updatePassword, reason) {
-      PasswordPrompt.updatePassword = updatePassword;
-      PasswordPrompt.reason = reason;
-      PasswordPrompt.show();
-    };
 
-    PDFJS.getDocument(parameters, pdfDataRangeTransport, passwordNeeded).then(
+    parameters.passworkSink = new PDFJS.PromiseIteratorSink({
+      next: function passwordRequestIteratorNext(reason) {
+        return {
+          value : new Promise(function (resolve) {
+            PasswordPrompt.updatePassword = resolve;
+            PasswordPrompt.reason = reason;
+            PasswordPrompt.show();
+          }),
+          done: false
+        };
+      }
+    });
+
+    PDFJS.getDocument(parameters, pdfDataRangeTransport).then(
       function getDocumentCallback(pdfDocument) {
         self.load(pdfDocument, scale);
         self.loading = false;

@@ -134,8 +134,7 @@ PDFJS.verbosity = PDFJS.verbosity === undefined ?
  * @return {Promise} A promise that is resolved with {PDFDocumentProxy} object.
  */
 PDFJS.getDocument = function getDocument(source,
-                                         pdfDataRangeTransport,
-                                         passwordCallback) {
+                                         pdfDataRangeTransport) {
   var workerInitializedPromise, workerReadyPromise, transport;
 
   if (typeof source === 'string') {
@@ -150,14 +149,28 @@ PDFJS.getDocument = function getDocument(source,
   if (!source.url && !source.data)
     error('Invalid parameter array, need either .data or .url');
 
-  // copy/use all keys as is except 'url' -- full path is required
+  var passwordSink = null;
+
   var params = {};
   for (var key in source) {
-    if (key === 'url' && typeof window !== 'undefined') {
-      params[key] = combineUrl(window.location.href, source[key]);
-      continue;
+    switch (key) {
+      case 'passworkSink':
+        passwordSink = source.passworkSink;
+        break;
+      case 'url':
+        // for 'url' -- full path is required
+        params[key] = typeof window === 'undefined' ? source[key] :
+          combineUrl(window.location.href, source[key]);
+        break;
+      case 'data':
+      case 'initialData':
+      case 'password':
+      case 'httpHeaders':
+      case 'length': // TODO ??
+        // whitelisted/supported parameters
+        params[key] = source[key];
+        break;
     }
-    params[key] = source[key];
   }
 
   workerInitializedPromise = new PDFJS.LegacyPromise();
@@ -165,7 +178,7 @@ PDFJS.getDocument = function getDocument(source,
   transport = new WorkerTransport(workerInitializedPromise,
       workerReadyPromise, pdfDataRangeTransport);
   workerInitializedPromise.then(function transportInitialized() {
-    transport.passwordCallback = passwordCallback;
+    transport.passwordSink = passwordSink;
     transport.fetchDocument(params);
   });
   return workerReadyPromise;
@@ -558,7 +571,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
     this.pagePromises = [];
     this.embeddedFontsUsed = false;
 
-    this.passwordCallback = null;
+    this.passwordSink = null;
 
     // If worker support isn't disabled explicit and the browser has worker
     // support, create a new web worker and test if it/the browser fullfills
@@ -713,17 +726,17 @@ var WorkerTransport = (function WorkerTransportClosure() {
       }, this);
 
       messageHandler.on('NeedPassword', function transportPassword(data) {
-        if (this.passwordCallback) {
-          return this.passwordCallback(updatePassword,
-                                       PasswordResponses.NEED_PASSWORD);
+        if (this.passwordSink) {
+          this.passwordSink.read(PasswordResponses.NEED_PASSWORD)
+                           .then(updatePassword);
         }
         this.workerReadyPromise.reject(data.exception.message, data.exception);
       }, this);
 
       messageHandler.on('IncorrectPassword', function transportBadPass(data) {
-        if (this.passwordCallback) {
-          return this.passwordCallback(updatePassword,
-                                       PasswordResponses.INCORRECT_PASSWORD);
+        if (this.passwordSink) {
+          this.passwordSink.read(PasswordResponses.INCORRECT_PASSWORD)
+                           .then(updatePassword);
         }
         this.workerReadyPromise.reject(data.exception.message, data.exception);
       }, this);

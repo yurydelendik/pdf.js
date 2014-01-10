@@ -1336,6 +1336,21 @@ MessageHandler.prototype = {
 };
 
 var PromiseSinkEmpty = PDFJS.PromiseSinkEmpty = Object.create(null);
+var PromiseIteratorSink = PDFJS.PromiseIteratorSink = (function () {
+  function PromiseIteratorSink(iterator) {
+    this._iterator = iterator;
+  }
+  PromiseIteratorSink.prototype = {
+    read: function PromiseIteratorSink_read(data) {
+      var tuple = this._iterator.next(data);
+      if (tuple.done) {
+        return Promise.reject(PromiseSinkEmpty);
+      }
+      return Promise.cast(tuple.value);
+    }
+  };
+  return PromiseIteratorSink;
+})();
 var PromiseValueSink = PDFJS.PromiseValueSink = (function () {
   function PromiseValueSink() {
     this._deferred = null;
