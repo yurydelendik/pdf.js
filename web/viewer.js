@@ -525,12 +525,7 @@ var PDFView = {
       PasswordPrompt.show();
     };
 
-    function getDocumentProgress(progressData) {
-      self.progress(progressData.loaded / progressData.total);
-    }
-
-    PDFJS.getDocument(parameters, pdfDataRangeTransport, passwordNeeded,
-                      getDocumentProgress).then(
+    PDFJS.getDocument(parameters, pdfDataRangeTransport, passwordNeeded).then(
       function getDocumentCallback(pdfDocument) {
         self.load(pdfDocument, scale);
         self.loading = false;
@@ -801,6 +796,16 @@ var PDFView = {
       };
     }
 
+    function getProgress(progressData) {
+      self.progress(progressData.loaded / progressData.total);
+      pdfDocument.getProgress().then(getProgress, getProgressComplete);
+    }
+    function getProgressComplete() {
+      PDFView.loadingBar.hide();
+    }
+
+    pdfDocument.getProgress().then(getProgress, getProgressComplete);
+
     PDFFindController.reset();
 
     this.pdfDocument = pdfDocument;
@@ -809,7 +814,6 @@ var PDFView = {
     errorWrapper.setAttribute('hidden', 'true');
 
     pdfDocument.dataLoaded().then(function() {
-      PDFView.loadingBar.hide();
       var outerContainer = document.getElementById('outerContainer');
       outerContainer.classList.remove('loadingInProgress');
     });

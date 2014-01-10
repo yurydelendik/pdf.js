@@ -253,6 +253,10 @@ var WorkerMessageHandler = PDFJS.WorkerMessageHandler = {
             loadDocument(true).then(onSuccess, onFailure);
           });
         }, onFailure);
+
+        pdfManager.onLoadedStream().then(function(stream) {
+          handler.send('DataLoaded', { length: stream.bytes.byteLength });
+        });
       }, onFailure);
     });
 
@@ -296,12 +300,6 @@ var WorkerMessageHandler = PDFJS.WorkerMessageHandler = {
       pdfManager.requestLoadedStream();
       pdfManager.onLoadedStream().then(function(stream) {
         deferred.resolve(stream.bytes);
-      });
-    });
-
-    handler.on('DataLoaded', function wphSetupDataLoaded(data, deferred) {
-      pdfManager.onLoadedStream().then(function(stream) {
-        deferred.resolve({ length: stream.bytes.byteLength });
       });
     });
 

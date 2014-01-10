@@ -838,6 +838,11 @@ var LegacyPromise = PDFJS.LegacyPromise = (function LegacyPromiseClosure() {
  * https://bugzilla.mozilla.org/show_bug.cgi?id=810490
  */
 (function PromiseClosure() {
+  function isPromise(obj) {
+    return typeof obj === 'object' && obj !== null &&
+           typeof obj.then === 'function';
+  }
+
   if (globalScope.Promise) {
     // Promises existing in the DOM/Worker, checking presence of all/resolve
     if (typeof globalScope.Promise.all !== 'function') {
@@ -866,6 +871,18 @@ var LegacyPromise = PDFJS.LegacyPromise = (function LegacyPromiseClosure() {
     if (typeof globalScope.Promise.resolve !== 'function') {
       globalScope.Promise.resolve = function (x) {
         return new globalScope.Promise(function (resolve) { resolve(x); });
+      };
+    }
+    if (typeof globalScope.Promise.reject !== 'function') {
+      globalScope.Promise.reject = function (reason) {
+        return new globalScope.Promise(function (resolve, reject) {
+          reject(reason);
+        });
+      };
+    }
+    if (typeof globalScope.Promise.cast !== 'function') {
+      globalScope.Promise.cast = function (x) {
+        return isPromise(x) ? x : globalScope.Promise.resolve(x);
       };
     }
     return;
@@ -1045,7 +1062,16 @@ var LegacyPromise = PDFJS.LegacyPromise = (function LegacyPromiseClosure() {
    * @return {boolean} true if x is thenable
    */
   Promise.isPromise = function Promise_isPromise(value) {
-    return value && typeof value.then === 'function';
+    return isPromise(value);
+  };
+  /**
+   * Casts value (if not already) to a promise
+   * @param x
+   * @returns {Promise}
+   * @constructor
+   */
+  Promise.cast = function Promise_cast(x) {
+    return isPromise(x) ? x : Promise.resolve(x);
   };
   /**
    * Creates resolved promise
@@ -1054,6 +1080,14 @@ var LegacyPromise = PDFJS.LegacyPromise = (function LegacyPromiseClosure() {
    */
   Promise.resolve = function Promise_resolve(x) {
     return new Promise(function (resolve) { resolve(x); });
+  };
+  /**
+   * Creates rejected promise
+   * @param reason reject reason
+   * @returns {Promise}
+   */
+  Promise.reject = function Promise_reject(reason) {
+    return new Promise(function (resolve, reject) { reject(reason); });
   };
 
   Promise.prototype = {
@@ -1300,6 +1334,55 @@ MessageHandler.prototype = {
     }
   }
 };
+
+var PromiseSinkEmpty = PDFJS.PromiseSinkEmpty = Object.create(null);
+var PromiseValueSink = PDFJS.PromiseValueSink = (function () {
+  function PromiseValueSink() {
+    this._deferred = null;
+    this._isClosed = false;
+    this._isValuePresent = false;
+    this._value = undefined;
+  }
+  PromiseValueSink.prototype = {
+    read: function PromiseValueSink_read() {
+      if (this._isValuePresent) {
+        var promise = Promise.resolve(this._value);
+        this._isValuePresent = false;
+        this._value = undefined;
+        return promise;
+      }
+      if (this._isClosed) {
+        return Promise.reject(PromiseSinkEmpty);
+      }
+      if (this._deferred) {
+        return this._deferred.promise;
+      }
+      this._deferred = {};
+      this._deferred.promise = new Promise(function (resolve, reject) {
+        this._deferred.resolve = resolve;
+        this._deferred.reject = reject;
+      }.bind(this));
+      return this._deferred.promise;
+    },
+    close: function PromiseValueSink_close() {
+      this._isClosed = true;
+      if (this._deferred) {
+        this._deferred.reject(PromiseSinkEmpty);
+        this._deferred = null;
+      }
+    },
+    set: function PromiseValueSink_set(value) {
+      if (this._deferred) {
+        this._deferred.resolve(value);
+        this._deferred = null;
+        return;
+      }
+      this._isValuePresent = true;
+      this._value = value;
+    }
+  };
+  return PromiseValueSink;
+})();
 
 function loadJpegStream(id, imageUrl, objs) {
   var img = new Image();

@@ -18,7 +18,7 @@
            FontLoader, globalScope, info, isArrayBuffer, loadJpegStream,
            MessageHandler, PDFJS, Promise, StatTimer, warn,
            PasswordResponses, Util, loadScript, LegacyPromise,
-           FontFace */
+           FontFace, PromiseValueSink */
 
 'use strict';
 
@@ -135,8 +135,7 @@ PDFJS.verbosity = PDFJS.verbosity === undefined ?
  */
 PDFJS.getDocument = function getDocument(source,
                                          pdfDataRangeTransport,
-                                         passwordCallback,
-                                         progressCallback) {
+                                         passwordCallback) {
   var workerInitializedPromise, workerReadyPromise, transport;
 
   if (typeof source === 'string') {
@@ -164,7 +163,7 @@ PDFJS.getDocument = function getDocument(source,
   workerInitializedPromise = new PDFJS.LegacyPromise();
   workerReadyPromise = new PDFJS.LegacyPromise();
   transport = new WorkerTransport(workerInitializedPromise,
-      workerReadyPromise, pdfDataRangeTransport, progressCallback);
+      workerReadyPromise, pdfDataRangeTransport);
   workerInitializedPromise.then(function transportInitialized() {
     transport.passwordCallback = passwordCallback;
     transport.fetchDocument(params);
@@ -285,6 +284,9 @@ var PDFDocumentProxy = (function PDFDocumentProxyClosure() {
       var promise = new PDFJS.LegacyPromise();
       this.transport.getData(promise);
       return promise;
+    },
+    getProgress: function PDFDocumentProxy_getProgress() {
+      return this.transport.progress.read();
     },
     /**
      * @return {Promise} A promise that is resolved when the document's data
@@ -534,17 +536,23 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
   };
   return PDFPageProxy;
 })();
+
 /**
  * For internal use only.
  */
 var WorkerTransport = (function WorkerTransportClosure() {
   function WorkerTransport(workerInitializedPromise, workerReadyPromise,
-      pdfDataRangeTransport, progressCallback) {
+      pdfDataRangeTransport) {
     this.pdfDataRangeTransport = pdfDataRangeTransport;
 
     this.workerReadyPromise = workerReadyPromise;
-    this.progressCallback = progressCallback;
     this.commonObjs = new PDFObjects();
+    this.progress = new PromiseValueSink();
+
+    this.dataLoadedPromise = new PDFJS.LegacyPromise();
+    this.dataLoadedPromise.then(function () {
+      this.progress.close();
+    }.bind(this));
 
     this.pageCache = [];
     this.pagePromises = [];
@@ -700,6 +708,10 @@ var WorkerTransport = (function WorkerTransportClosure() {
         this.workerReadyPromise.resolve(pdfDocument);
       }, this);
 
+      messageHandler.on('DataLoaded', function transportDataLoaded(data) {
+        this.dataLoadedPromise.resolve(data);
+      }, this);
+
       messageHandler.on('NeedPassword', function transportPassword(data) {
         if (this.passwordCallback) {
           return this.passwordCallback(updatePassword,
@@ -820,12 +832,10 @@ var WorkerTransport = (function WorkerTransportClosure() {
       }, this);
 
       messageHandler.on('DocProgress', function transportDocProgress(data) {
-        if (this.progressCallback) {
-          this.progressCallback({
-            loaded: data.loaded,
-            total: data.total
-          });
-        }
+        this.progress.set({
+          loaded: data.loaded,
+          total: data.total
+        });
       }, this);
 
       messageHandler.on('DocError', function transportDocError(data) {
@@ -894,11 +904,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
     },
 
     dataLoaded: function WorkerTransport_dataLoaded() {
-      var promise = new PDFJS.LegacyPromise();
-      this.messageHandler.send('DataLoaded', null, function(args) {
-        promise.resolve(args);
-      });
-      return promise;
+      return this.dataLoadedPromise;
     },
 
     getPage: function WorkerTransport_getPage(pageNumber, promise) {
