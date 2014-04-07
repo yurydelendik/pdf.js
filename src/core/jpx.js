@@ -139,7 +139,7 @@ var JpxImage = (function JpxImageClosure() {
           var code = readUint16(data, position);
           position += 2;
 
-          var length = 0, j;
+          var length = 0, j, sqcd, spqcds, spqcdSize, scalarExpounded, tile;
           switch (code) {
             case 0xFF4F: // Start of codestream (SOC)
               context.mainHeader = true;
@@ -181,8 +181,7 @@ var JpxImage = (function JpxImageClosure() {
               length = readUint16(data, position);
               var qcd = {};
               j = position + 2;
-              var sqcd = data[j++];
-              var spqcdSize, scalarExpounded;
+              sqcd = data[j++];
               switch (sqcd & 0x1F) {
                 case 0:
                   spqcdSize = 8;
@@ -202,7 +201,7 @@ var JpxImage = (function JpxImageClosure() {
               qcd.noQuantization = (spqcdSize == 8);
               qcd.scalarExpounded = scalarExpounded;
               qcd.guardBits = sqcd >> 5;
-              var spqcds = [];
+              spqcds = [];
               while (j < length + position) {
                 var spqcd = {};
                 if (spqcdSize == 8) {
@@ -234,8 +233,7 @@ var JpxImage = (function JpxImageClosure() {
                 cqcc = readUint16(data, j);
                 j += 2;
               }
-              var sqcd = data[j++];
-              var spqcdSize, scalarExpounded;
+              sqcd = data[j++];
               switch (sqcd & 0x1F) {
                 case 0:
                   spqcdSize = 8;
@@ -255,9 +253,9 @@ var JpxImage = (function JpxImageClosure() {
               qcc.noQuantization = (spqcdSize == 8);
               qcc.scalarExpounded = scalarExpounded;
               qcc.guardBits = sqcd >> 5;
-              var spqcds = [];
+              spqcds = [];
               while (j < (length + position)) {
-                var spqcd = {};
+                spqcd = {};
                 if (spqcdSize == 8) {
                   spqcd.epsilon = data[j++] >> 3;
                   spqcd.mu = 0;
@@ -330,7 +328,7 @@ var JpxImage = (function JpxImageClosure() {
               break;
             case 0xFF90: // Start of tile-part (SOT)
               length = readUint16(data, position);
-              var tile = {};
+              tile = {};
               tile.index = readUint16(data, position + 2);
               tile.length = readUint32(data, position + 4);
               tile.dataEnd = tile.length + position - 2;
@@ -348,7 +346,7 @@ var JpxImage = (function JpxImageClosure() {
               context.currentTile = tile;
               break;
             case 0xFF93: // Start of data (SOD)
-              var tile = context.currentTile;
+              tile = context.currentTile;
               if (tile.partIndex === 0) {
                 initializeTile(context, tile.index);
                 buildPackets(context);
@@ -409,12 +407,12 @@ var JpxImage = (function JpxImageClosure() {
   function calculateTileGrids(context, components) {
     var siz = context.SIZ;
     // Section B.3 Division into tile and tile-components
-    var tiles = [];
+    var tile, tiles = [];
     var numXtiles = Math.ceil((siz.Xsiz - siz.XTOsiz) / siz.XTsiz);
     var numYtiles = Math.ceil((siz.Ysiz - siz.YTOsiz) / siz.YTsiz);
     for (var q = 0; q < numYtiles; q++) {
       for (var p = 0; p < numXtiles; p++) {
-        var tile = {};
+        tile = {};
         tile.tx0 = Math.max(siz.XTOsiz + p * siz.XTsiz, siz.XOsiz);
         tile.ty0 = Math.max(siz.YTOsiz + q * siz.YTsiz, siz.YOsiz);
         tile.tx1 = Math.min(siz.XTOsiz + (p + 1) * siz.XTsiz, siz.Xsiz);
@@ -432,7 +430,8 @@ var JpxImage = (function JpxImageClosure() {
       var component = components[i];
       var tileComponents = [];
       for (var j = 0, jj = tiles.length; j < jj; j++) {
-        var tileComponent = {}, tile = tiles[j];
+        var tileComponent = {};
+        tile = tiles[j];
         tileComponent.tcx0 = Math.ceil(tile.tx0 / component.XRsiz);
         tileComponent.tcy0 = Math.ceil(tile.ty0 / component.YRsiz);
         tileComponent.tcx1 = Math.ceil(tile.tx1 / component.XRsiz);
@@ -498,9 +497,10 @@ var JpxImage = (function JpxImageClosure() {
     var precinctParameters = subband.resolution.precinctParameters;
     var codeblocks = [];
     var precincts = [];
-    for (var j = cby0; j < cby1; j++) {
-      for (var i = cbx0; i < cbx1; i++) {
-        var codeblock = {
+    var i, ii, j, codeblock, precinctNumber;
+    for (j = cby0; j < cby1; j++) {
+      for (i = cbx0; i < cbx1; i++) {
+        codeblock = {
           cbx: i,
           cby: j,
           tbx0: codeblockWidth * i,
@@ -515,8 +515,7 @@ var JpxImage = (function JpxImageClosure() {
         var pj = Math.floor((codeblock.tby0 -
                  precinctParameters.precinctYOffset) /
                  precinctParameters.precinctHeight);
-        var precinctNumber = pj +
-                             pi * precinctParameters.numprecinctswide;
+        precinctNumber = pj + pi * precinctParameters.numprecinctswide;
         codeblock.tbx0_ = Math.max(subband.tbx0, codeblock.tbx0);
         codeblock.tby0_ = Math.max(subband.tby0, codeblock.tby0);
         codeblock.tbx1_ = Math.min(subband.tbx1, codeblock.tbx1);
@@ -553,9 +552,9 @@ var JpxImage = (function JpxImageClosure() {
       numcodeblockhigh: cby1 - cby1 + 1
     };
     subband.codeblocks = codeblocks;
-    for (var i = 0, ii = codeblocks.length; i < ii; i++) {
-      var codeblock = codeblocks[i];
-      var precinctNumber = codeblock.precinctNumber;
+    for (i = 0, ii = codeblocks.length; i < ii; i++) {
+      codeblock = codeblocks[i];
+      precinctNumber = codeblock.precinctNumber;
     }
     subband.precincts = precincts;
   }
@@ -815,19 +814,20 @@ var JpxImage = (function JpxImageClosure() {
         continue;
       }
       var layerNumber = packet.layerNumber;
-      var queue = [];
+      var queue = [], codeblock;
       for (var i = 0, ii = packet.codeblocks.length; i < ii; i++) {
-        var codeblock = packet.codeblocks[i];
+        codeblock = packet.codeblocks[i];
         var precinct = codeblock.precinct;
         var codeblockColumn = codeblock.cbx - precinct.cbxMin;
         var codeblockRow = codeblock.cby - precinct.cbyMin;
         var codeblockIncluded = false;
         var firstTimeInclusion = false;
+        var valueReady;
         if ('included' in codeblock) {
           codeblockIncluded = !!readBits(1);
         } else {
           // reading inclusion tree
-          var precinct = codeblock.precinct;
+          precinct = codeblock.precinct;
           var inclusionTree, zeroBitPlanesTree;
           if ('inclusionTree' in precinct) {
             inclusionTree = precinct.inclusionTree;
@@ -844,7 +844,7 @@ var JpxImage = (function JpxImageClosure() {
           if (inclusionTree.reset(codeblockColumn, codeblockRow, layerNumber)) {
             while (true) {
               if (readBits(1)) {
-                var valueReady = !inclusionTree.nextLevel();
+                valueReady = !inclusionTree.nextLevel();
                 if (valueReady) {
                   codeblock.included = true;
                   codeblockIncluded = firstTimeInclusion = true;
@@ -865,7 +865,7 @@ var JpxImage = (function JpxImageClosure() {
           zeroBitPlanesTree.reset(codeblockColumn, codeblockRow);
           while (true) {
             if (readBits(1)) {
-              var valueReady = !zeroBitPlanesTree.nextLevel();
+              valueReady = !zeroBitPlanesTree.nextLevel();
               if (valueReady) {
                 break;
               }
@@ -893,7 +893,7 @@ var JpxImage = (function JpxImageClosure() {
       alignToByte();
       while (queue.length > 0) {
         var packetItem = queue.shift();
-        var codeblock = packetItem.codeblock;
+        codeblock = packetItem.codeblock;
         if (!('data' in codeblock)) {
           codeblock.data = [];
         }
@@ -929,14 +929,15 @@ var JpxImage = (function JpxImageClosure() {
 
       // collect data
       var data = codeblock.data, totalLength = 0, codingpasses = 0;
-      for (var q = 0, qq = data.length; q < qq; q++) {
-        var dataItem = data[q];
+      var q, qq, dataItem;
+      for (q = 0, qq = data.length; q < qq; q++) {
+        dataItem = data[q];
         totalLength += dataItem.end - dataItem.start;
         codingpasses += dataItem.codingpasses;
       }
       var encodedData = new Uint8Array(totalLength), k = 0;
-      for (var q = 0, qq = data.length; q < qq; q++) {
-        var dataItem = data[q];
+      for (q = 0, qq = data.length; q < qq; q++) {
+        dataItem = data[q];
         var chunk = dataItem.data.subarray(dataItem.start, dataItem.end);
         encodedData.set(chunk, k);
         k += chunk.length;
@@ -945,7 +946,7 @@ var JpxImage = (function JpxImageClosure() {
       var decoder = new ArithmeticDecoder(encodedData, 0, totalLength);
       bitModel.setDecoder(decoder);
 
-      for (var q = 0; q < codingpasses; q++) {
+      for (q = 0; q < codingpasses; q++) {
         switch (currentCodingpassType) {
           case 0:
             bitModel.runSignificancePropogationPass();
@@ -971,7 +972,7 @@ var JpxImage = (function JpxImageClosure() {
       var bitsDecoded = bitModel.bitsDecoded;
       var magnitudeCorrection = reversible ? 0 : 0.5;
       for (var j = 0; j < blockHeight; j++) {
-        for (var k = 0; k < blockWidth; k++) {
+        for (k = 0; k < blockWidth; k++) {
           var mag = magnitude[position];
           if (mag !== 0) {
             n = sign[position] ? -(mag + magnitudeCorrection) :
@@ -1062,32 +1063,35 @@ var JpxImage = (function JpxImageClosure() {
     for (var i = 0, ii = context.tiles.length; i < ii; i++) {
       var tile = context.tiles[i];
       var result = [];
-      for (var c = 0; c < componentsCount; c++) {
+      var c;
+      for (c = 0; c < componentsCount; c++) {
         var image = transformTile(context, tile, c);
         result.push(image);
       }
 
       // Section G.2.2 Inverse multi component transform
+      var y0items, y1items, y2items, j, jj, y0, y1, y2;
+      var component, offset, tileImage, items;
       if (tile.codingStyleDefaultParameters.multipleComponentTransform) {
         var component0 = tile.components[0];
         if (!component0.codingStyleParameters.reversibleTransformation) {
           // inverse irreversible multiple component transform
-          var y0items = result[0].items;
-          var y1items = result[1].items;
-          var y2items = result[2].items;
-          for (var j = 0, jj = y0items.length; j < jj; ++j) {
-            var y0 = y0items[j], y1 = y1items[j], y2 = y2items[j];
+          y0items = result[0].items;
+          y1items = result[1].items;
+          y2items = result[2].items;
+          for (j = 0, jj = y0items.length; j < jj; ++j) {
+            y0 = y0items[j]; y1 = y1items[j]; y2 = y2items[j];
             y0items[j] = y0 + 1.402 * y2 + 0.5;
             y1items[j] = y0 - 0.34413 * y1 - 0.71414 * y2 + 0.5;
             y2items[j] = y0 + 1.772 * y1 + 0.5;
           }
         } else {
           // inverse reversible multiple component transform
-          var y0items = result[0].items;
-          var y1items = result[1].items;
-          var y2items = result[2].items;
-          for (var j = 0, jj = y0items.length; j < jj; ++j) {
-            var y0 = y0items[j], y1 = y1items[j], y2 = y2items[j];
+          y0items = result[0].items;
+          y1items = result[1].items;
+          y2items = result[2].items;
+          for (j = 0, jj = y0items.length; j < jj; ++j) {
+            y0 = y0items[j]; y1 = y1items[j]; y2 = y2items[j];
             var i1 = y0 - ((y2 + y1) >> 2);
             y1items[j] = i1;
             y0items[j] = y2 + i1;
@@ -1097,29 +1101,29 @@ var JpxImage = (function JpxImageClosure() {
       }
 
       // Section G.1 DC level shifting to unsigned component values
-      for (var c = 0; c < componentsCount; c++) {
-        var component = components[c];
+      for (c = 0; c < componentsCount; c++) {
+        component = components[c];
         if (component.isSigned) {
           continue;
         }
 
-        var offset = 1 << (component.precision - 1);
-        var tileImage = result[c];
-        var items = tileImage.items;
-        for (var j = 0, jj = items.length; j < jj; j++) {
+        offset = 1 << (component.precision - 1);
+        tileImage = result[c];
+        items = tileImage.items;
+        for (j = 0, jj = items.length; j < jj; j++) {
           items[j] += offset;
         }
       }
 
       // To simplify things: shift and clamp output to 8 bit unsigned
-      for (var c = 0; c < componentsCount; c++) {
-        var component = components[c];
-        var offset = component.isSigned ? 128 : 0;
+      for (c = 0; c < componentsCount; c++) {
+        component = components[c];
+        offset = component.isSigned ? 128 : 0;
         var shift = component.precision - 8;
-        var tileImage = result[c];
-        var items = tileImage.items;
+        tileImage = result[c];
+        items = tileImage.items;
         var data = new Uint8Array(items.length);
-        for (var j = 0, jj = items.length; j < jj; j++) {
+        for (j = 0, jj = items.length; j < jj; j++) {
           var value = (items[j] >> shift) + offset;
           data[j] = value < 0 ? 0 : value > 255 ? 255 : value;
         }
@@ -1165,9 +1169,9 @@ var JpxImage = (function JpxImageClosure() {
     }
     TagTree.prototype = {
       reset: function TagTree_reset(i, j) {
-        var currentLevel = 0, value = 0;
+        var currentLevel = 0, value = 0, level;
         while (currentLevel < this.levels.length) {
-          var level = this.levels[currentLevel];
+          level = this.levels[currentLevel];
           var index = i + j * level.width;
           if (index in level.items) {
             value = level.items[index];
@@ -1179,7 +1183,7 @@ var JpxImage = (function JpxImageClosure() {
           currentLevel++;
         }
         currentLevel--;
-        var level = this.levels[currentLevel];
+        level = this.levels[currentLevel];
         level.items[level.index] = value;
         this.currentLevel = currentLevel;
         delete this.value;
@@ -1199,7 +1203,7 @@ var JpxImage = (function JpxImageClosure() {
         }
 
         this.currentLevel = currentLevel;
-        var level = this.levels[currentLevel];
+        level = this.levels[currentLevel];
         level.items[level.index] = value;
         return true;
       }
@@ -1265,7 +1269,7 @@ var JpxImage = (function JpxImageClosure() {
         var level = this.levels[levelIndex];
         var currentValue = level.items[level.index];
         while (--levelIndex >= 0) {
-          var level = this.levels[levelIndex];
+          level = this.levels[levelIndex];
           level.items[level.index] = currentValue;
         }
       },
@@ -1280,7 +1284,7 @@ var JpxImage = (function JpxImageClosure() {
         }
 
         this.currentLevel = currentLevel;
-        var level = this.levels[currentLevel];
+        level = this.levels[currentLevel];
         level.items[level.index] = value;
         return true;
       }
@@ -1554,7 +1558,7 @@ var JpxImage = (function JpxImageClosure() {
               neighborsSignificance[index0 + twoRowsDown] === 0 &&
               neighborsSignificance[index0 + threeRowsDown] === 0);
             var i1 = 0, index = index0;
-            var i;
+            var i, sign;
             if (allEmpty) {
               var hasSignificantCoefficent =
                 decoder.readBit(contexts, RUNLENGTH_CONTEXT);
@@ -1570,7 +1574,7 @@ var JpxImage = (function JpxImageClosure() {
               i = i0 + i1;
               index += i1 * width;
 
-              var sign = this.decodeSignBit(i, j);
+              sign = this.decodeSignBit(i, j);
               coefficentsSign[index] = sign;
               coefficentsMagnitude[index] = 1;
               this.setNeighborsSignificance(i, j);
@@ -1597,7 +1601,7 @@ var JpxImage = (function JpxImageClosure() {
               var contextLabel = labels[neighborsSignificance[index]];
               var decision = decoder.readBit(contexts, contextLabel);
               if (decision == 1) {
-                var sign = this.decodeSignBit(i, j);
+                sign = this.decodeSignBit(i, j);
                 coefficentsSign[index] = sign;
                 coefficentsMagnitude[index] = 1;
                 this.setNeighborsSignificance(i, j);
@@ -1665,7 +1669,7 @@ var JpxImage = (function JpxImageClosure() {
 
       for (i = 0, k = 0; i < llHeight; i++) {
         l = i * 2 * width;
-        for (var j = 0; j < llWidth; j++, k++, l += 2) {
+        for (j = 0; j < llWidth; j++, k++, l += 2) {
           items[l] = llItems[k];
         }
       }
@@ -1720,7 +1724,8 @@ var JpxImage = (function JpxImageClosure() {
       for (i = 0; i < numBuffers; i++) {
         colBuffers.push(new Float32Array(height + 2 * bufferPadding));
       }
-      var b, currentBuffer = 0, ll = bufferPadding + height;
+      var b, currentBuffer = 0;
+      ll = bufferPadding + height;
 
       // Section F.3.5 VER_SR
       for (var u = 0; u < width; u++) {
@@ -1787,40 +1792,41 @@ var JpxImage = (function JpxImageClosure() {
       var delta = 0.443506852043971;
       var K = 1.230174104914001;
       var K_ = 1 / K;
+      var j, n, nn;
 
       // step 1
-      var j = offset_ - 2;
-      for (var n = i0_ - 1, nn = i1_ + 2; n < nn; n++, j += 2) {
+      j = offset_ - 2;
+      for (n = i0_ - 1, nn = i1_ + 2; n < nn; n++, j += 2) {
         x[j] = K * y[j];
       }
 
       // step 2
-      var j = offset_ - 3;
-      for (var n = i0_ - 2, nn = i1_ + 2; n < nn; n++, j += 2) {
+      j = offset_ - 3;
+      for (n = i0_ - 2, nn = i1_ + 2; n < nn; n++, j += 2) {
         x[j] = K_ * y[j];
       }
 
       // step 3
-      var j = offset_ - 2;
-      for (var n = i0_ - 1, nn = i1_ + 2; n < nn; n++, j += 2) {
+      j = offset_ - 2;
+      for (n = i0_ - 1, nn = i1_ + 2; n < nn; n++, j += 2) {
         x[j] -= delta * (x[j - 1] + x[j + 1]);
       }
 
       // step 4
-      var j = offset_ - 1;
-      for (var n = i0_ - 1, nn = i1_ + 1; n < nn; n++, j += 2) {
+      j = offset_ - 1;
+      for (n = i0_ - 1, nn = i1_ + 1; n < nn; n++, j += 2) {
         x[j] -= gamma * (x[j - 1] + x[j + 1]);
       }
 
       // step 5
-      var j = offset_;
-      for (var n = i0_, nn = i1_ + 1; n < nn; n++, j += 2) {
+      j = offset_;
+      for (n = i0_, nn = i1_ + 1; n < nn; n++, j += 2) {
         x[j] -= beta * (x[j - 1] + x[j + 1]);
       }
 
       // step 6
-      var j = offset_ + 1;
-      for (var n = i0_, nn = i1_; n < nn; n++, j += 2) {
+      j = offset_ + 1;
+      for (n = i0_, nn = i1_; n < nn; n++, j += 2) {
         x[j] -= alpha * (x[j - 1] + x[j + 1]);
       }
     };
@@ -1840,12 +1846,13 @@ var JpxImage = (function JpxImageClosure() {
       var i0_ = Math.floor(i0 / 2);
       var i1_ = Math.floor((i0 + length) / 2);
       var offset_ = offset - (i0 % 1);
+      var n, nn, j;
 
-      for (var n = i0_, nn = i1_ + 1, j = offset_; n < nn; n++, j += 2) {
+      for (n = i0_, nn = i1_ + 1, j = offset_; n < nn; n++, j += 2) {
         x[j] = y[j] - Math.floor((y[j - 1] + y[j + 1] + 2) / 4);
       }
 
-      for (var n = i0_, nn = i1_, j = offset_ + 1; n < nn; n++, j += 2) {
+      for (n = i0_, nn = i1_, j = offset_ + 1; n < nn; n++, j += 2) {
         x[j] = y[j] + Math.floor((x[j - 1] + x[j + 1]) / 2);
       }
     };
