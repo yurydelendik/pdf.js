@@ -112,8 +112,8 @@ var Annotation = (function AnnotationClosure() {
           var isInvalid = false;
           var numPositive = 0;
           for (var i = 0; i < dashArrayLength; i++) {
-            var valid = (+dashArray[i] >= 0);
-            if (!valid) {
+            var validNumber = (+dashArray[i] >= 0);
+            if (!validNumber) {
               isInvalid = true;
               break;
             } else if (dashArray[i] > 0) {
