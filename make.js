@@ -1273,7 +1273,6 @@ target.lint = function() {
                     'web/',
                     'test/downloadutils.js',
                     'test/driver.js',
-                    'test/reporter.js',
                     'test/test.js',
                     'test/testutils.js',
                     'test/webbrowser.js',
@@ -1291,8 +1290,11 @@ target.lint = function() {
     exec('npm install jshint@2.4.x'); // TODO read version from package.json
   }
 
-  exit(exec('"' + jshintPath + '" --reporter test/reporter.js ' +
-            LINT_FILES.join(' ')).code);
+  var exitCode = exec('"' + jshintPath + '" ' + LINT_FILES.join(' ')).code;
+  if (exitCode === 0) {
+    echo('files checked, no errors found');
+  }
+  exit(exitCode);
 
   crlfchecker.checkIfCrlfIsPresent(LINT_FILES);
 };
