@@ -1167,6 +1167,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       assertWellFormed(isName(type), 'invalid font Subtype');
 
       var composite = false;
+      var uint8array;
       if (type.name == 'Type0') {
         // If font is a composite
         //  - get the descendant font
@@ -1196,7 +1197,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         var toUnicode = dict.get('ToUnicode') || baseDict.get('ToUnicode');
         if (isStream(toUnicode)) {
           var stream = toUnicode.str || toUnicode;
-          var uint8array = stream.buffer ?
+          uint8array = stream.buffer ?
             new Uint8Array(stream.buffer.buffer, 0, stream.bufferLength) :
             new Uint8Array(stream.bytes.buffer,
                            stream.start, stream.end - stream.start);
@@ -1208,7 +1209,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
         var widths = dict.get('Widths') || baseDict.get('Widths');
         if (widths) {
-          var uint8array = new Uint8Array(new Uint32Array(widths).buffer);
+          uint8array = new Uint8Array(new Uint32Array(widths).buffer);
           hash.update(uint8array);
         }
       }
