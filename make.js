@@ -1294,9 +1294,6 @@ target.lint = function() {
   if (exitCode === 0) {
     echo('files checked, no errors found');
   }
-  exit(exitCode);
-
-  crlfchecker.checkIfCrlfIsPresent(LINT_FILES);
 };
 
 //
