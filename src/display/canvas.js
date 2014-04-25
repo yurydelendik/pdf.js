@@ -1013,6 +1013,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     closePath: function CanvasGraphics_closePath() {
       this.ctx.closePath();
     },
+
     rectangle: function CanvasGraphics_rectangle(x, y, width, height) {
       if (width === 0) {
         width = this.getSinglePixelWidth();
