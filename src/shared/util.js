@@ -153,7 +153,8 @@ var OPS = PDFJS.OPS = {
   paintImageXObjectRepeat: 88,
   paintImageMaskXObjectRepeat: 89,
   paintSolidColorImageMask: 90,
-  constructPath: 91
+  constructPath: 91,
+  shapes: 92
 };
 
 // A notice for devs. These are good for things that are helpful to devs, such

@@ -57,7 +57,7 @@ var TextLayerBuilder = function textLayerBuilder(options) {
 
     // No point in rendering so many divs as it'd make the browser unusable
     // even after the divs are rendered
-    var MAX_TEXT_DIVS_TO_RENDER = 100000;
+    var MAX_TEXT_DIVS_TO_RENDER = 10000;
     if (textDivs.length > MAX_TEXT_DIVS_TO_RENDER) {
       return;
     }

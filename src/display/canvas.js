@@ -1014,6 +1014,51 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       this.ctx.closePath();
     },
 
+    shapes: function CanvasGraphics_shapes(shapes) {
+      var ctx = this.ctx;
+      var current = this.current;
+      for (var i = 0, ii = shapes.length; i < ii; i++) {
+        var shape = shapes[i];
+        this.save();
+        this.transform.apply(this, shape.transform);
+        this.constructPath(shape.path[0], shape.path[1]);
+        if (shape.stroke) {
+          this.setStrokeRGBColor.apply(this, shape.stroke.color);
+          if (shape.stroke.alpha !== undefined) current.strokeAlpha = shape.stroke.alpha;
+          if (!isNaN(shape.stroke.lineWidth)) this.setLineWidth(shape.stroke.lineWidth);
+          if (!isNaN(shape.stroke.lineCap)) this.setLineCap(shape.stroke.lineCap);
+          if (!isNaN(shape.stroke.lineJoin)) this.setLineJoin(shape.stroke.lineJoin);
+          if (!isNaN(shape.stroke.miterLimit)) this.setMiterLimit(shape.stroke.miterLimit);
+          if (!isNaN(shape.stroke.dash)) this.setDash(shape.stroke.dash[0], shape.stroke.dash[1]);
+        }
+        if (shape.fill) {
+          this.setFillRGBColor.apply(this, shape.fill.color);
+          if (shape.fill.alpha !== undefined) {
+            current.fillAlpha = shape.fill.alpha;
+            ctx.globalAlpha = shape.fill.alpha;
+          }
+        }
+        switch(shape.operation) {
+          case OPS.stroke:
+            this.stroke();
+            break;
+          case OPS.fill:
+            this.fill();
+            break;
+          case OPS.eoFill:
+            this.eoFill();
+            break;
+          case OPS.fillStroke:
+            this.fillStroke();
+            break;
+          case OPS.eoFillStroke:
+            this.eoFillStroke();
+            break;
+        }
+        this.restore();
+      }
+    },
+
     rectangle: function CanvasGraphics_rectangle(x, y, width, height) {
       if (width === 0) {
         width = this.getSinglePixelWidth();

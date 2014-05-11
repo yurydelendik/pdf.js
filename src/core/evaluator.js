@@ -1550,6 +1550,7 @@ var OperatorList = (function OperatorListClosure() {
     this.dependencies = {};
     this.pageIndex = pageIndex;
     this.intent = intent;
+    this.optimizer = null;
   }
 
   OperatorList.prototype = {
@@ -1601,7 +1602,11 @@ var OperatorList = (function OperatorListClosure() {
     },
 
     flush: function(lastChunk) {
-      new QueueOptimizer().optimize(this);
+      var optimizer = this.optimizer;
+      if (!optimizer) {
+        optimizer = this.optimizer = new QueueOptimizer();
+      }
+      optimizer.optimize(this);
       var transfers = getTransfers(this);
       this.messageHandler.send('RenderPageChunk', {
         operatorList: {
@@ -2212,7 +2217,189 @@ var QueueOptimizer = (function QueueOptimizerClosure() {
       context.currentOperation = i;
     });
 
-  function QueueOptimizer() {}
+  var RGB_COLORSPACE = 'DeviceRgbCS';
+
+  addState(InitialState,
+    [OPS.save, OPS.transform, OPS.constructPath],
+    function (context) {
+      var fnArray = context.fnArray, argsArray = context.argsArray;
+      var j = context.currentOperation - 2;
+      var i = j;
+      var ii = fnArray.length;
+      var fn;
+      var saveOpened = false;
+      while (i < ii && ((fn = fnArray[i]) in ShapesStateVisitor)) {
+        if (fn === OPS.restore) {
+          if (!saveOpened) {
+            break;
+          }
+          saveOpened = false;
+        } else if (fn === OPS.save) {
+          if (saveOpened) {
+            break;
+          }
+          saveOpened = true;
+        }
+        i++;
+      }
+      while (j < i - 1 && fnArray[i - 1] !== OPS.restore) {
+        i--;
+      }
+      var MIN_AMOUNT_OF_ITEMS = 10;
+      if (i - j < MIN_AMOUNT_OF_ITEMS) {
+        return;
+      }
+      var cachedStyles = Object.create(null);
+      var shapes = [];
+      var k = j;
+      while (k < i) {
+        if (fnArray[k] !== OPS.save ||
+            fnArray[k + 4] !== OPS.restore ||
+            fnArray[k + 1] !== OPS.transform ||
+            fnArray[k + 2] !== OPS.constructPath) {
+          return; // wrong pattern
+        }
+        var shapesState = context.shapesState;
+        if (!shapesState.isSimpleGState) {
+          return; // complex state
+        }
+        var fn = fnArray[k + 3];
+        var stroke = null;
+        if (fn === OPS.stroke || fn === OPS.fillStroke ||
+            fn === OPS.eoFillStroke) {
+          if (shapesState.strokeColorSpace !== RGB_COLORSPACE) {
+            return;
+          }
+          stroke = {};
+          stroke.color = shapesState.strokeColor;
+          stroke.alpha = shapesState.strokeAlpha;
+          stroke.lineWidth = shapesState.lineWidth;
+          stroke.lineCap = shapesState.lineCap;
+          stroke.lineJoin = shapesState.lineJoin;
+          stroke.miterLimit = shapesState.miterLimit;
+          stroke.dash = shapesState.dash;
+        }
+        var fill = null;
+        if (fn === OPS.fill || fn === OPS.eoFill ||
+            fn === OPS.fillStroke || fn === OPS.eoFillStroke) {
+          if (shapesState.fillColorSpace !== RGB_COLORSPACE) {
+            return;
+          }
+          fill = {};
+          fill.color = shapesState.fillColor;
+          fill.alpha = shapesState.fillAlpha;
+        }
+        if (!stroke && !fill) {
+          return;
+        }
+        var shape = {
+          transform: argsArray[k + 1],
+          path: argsArray[k + 2],
+          operation: fn,
+          stroke: stroke,
+          fill: fill
+        };
+        k += 5;
+        while (k < i && fnArray[k] !== OPS.save) {
+          var shapeOperationFn = ShapesStateVisitor[fnArray[k]];
+          if (shapeOperationFn) {
+            shapeOperationFn(context, argsArray[k]);
+          }
+          cachedStyles[fnArray[k]] = argsArray[k];
+          k++;
+        }
+        shapes.push(shape);
+      }
+      fnArray.splice(j, i - j, OPS.shapes);
+      argsArray.splice(j, i - j, [shapes]);
+      for (var key in cachedStyles) {
+        j++;
+        fnArray.splice(j, 0, key);
+        argsArray.splice(j, 0, cachedStyles[key]);
+      }
+      context.currentOperation = j;
+    });
+
+  var ShapesStateVisitor = (function ShapesStateVisitorClosure() {
+    var visitor = [];
+    visitor[OPS.save] = function (context, args) {
+      context.shapesState = Object.create(context.shapesState);
+    };
+    visitor[OPS.setFillColorSpace] = function (context, args) {
+      context.shapesState.fillColorSpace = args[0];
+    };
+    visitor[OPS.setStrokeColorSpace] = function (context, args) {
+      context.shapesState.strokeColorSpace = args[0];
+    };
+    visitor[OPS.restore] = function (context, args) {
+      context.shapesState = Object.getPrototypeOf(context.shapesState);
+    };
+    visitor[OPS.setFillRGBColor] = function (context, args) {
+      context.shapesState.fillColorSpace = RGB_COLORSPACE;
+      context.shapesState.fillColor = args;
+    };
+    visitor[OPS.setFillColorN] = function (context, args) {
+      context.shapesState.fillColor = args;
+    };
+    visitor[OPS.setStrokeRGBColor] = function (context, args) {
+      context.shapesState.strokeColorSpace = RGB_COLORSPACE;
+      context.shapesState.strokeColor = args;
+    };
+    visitor[OPS.setStrokeColorN] = function (context, args) {
+      context.shapesState.strokeColor = args;
+    };
+    visitor[OPS.setLineWidth] = function (context, args) {
+      context.shapesState.lineWidth = args[0];
+    };
+    visitor[OPS.setMiterLimit] = function (context, args) {
+      context.shapesState.miterLimit = args[0];
+    };
+    visitor[OPS.setLineCap] = function (context, args) {
+      context.shapesState.lineCap = args[0];
+    };
+    visitor[OPS.setLineJoin] = function (context, args) {
+      context.shapesState.lineJoin = args[0];
+    };
+    visitor[OPS.setDash] = function (context, args) {
+      context.shapesState.dash = args;
+    };
+    visitor[OPS.setGState] = function (context, args) {
+      var isSimple = true;
+      var state = args[0];
+      for (var i = 0, ii = state.length; i < ii && isSimple; i++) {
+        switch (state[i][0]) {
+          case 'BM':
+            isSimple = isName(state[i][1], 'Normal');
+            break;
+          case 'ca':
+            context.shapesState.fillAlpha = state[i][1];
+            break;
+          case 'CA':
+            context.shapesState.strokeAlpha = state[i][1];
+            break;
+          case 'SMask':
+            isSimple = !state[i][1];
+            break;
+          default:
+            isSimple = false;
+            break;
+        }
+      }
+      context.shapesState.isSimpleGState = isSimple;
+    };
+    visitor[OPS.fill] = null;
+    visitor[OPS.stroke] = null;
+    visitor[OPS.fillStroke] = null;
+    visitor[OPS.eoFill] = null;
+    visitor[OPS.eoFillStroke] = null;
+    visitor[OPS.constructPath] = null;
+    visitor[OPS.transform] = null;
+    return visitor;
+  })();
+
+  function QueueOptimizer() {
+    this.shapesState = Object.create(null);
+  }
 
   QueueOptimizer.prototype = {
     optimize: function QueueOptimizer_optimize(queue) {
@@ -2220,12 +2407,18 @@ var QueueOptimizer = (function QueueOptimizerClosure() {
       var context = {
         currentOperation: 0,
         fnArray: fnArray,
-        argsArray: argsArray
+        argsArray: argsArray,
+        shapesState: this.shapesState
       };
-      var i, ii = argsArray.length;
       var state;
+      var i, ii = argsArray.length;
       for (i = 0; i < ii; i++) {
-        state = (state || InitialState)[fnArray[i]];
+        var fn = fnArray[i];
+        var shapeOperationFn = ShapesStateVisitor[fn];
+        if (shapeOperationFn) {
+          shapeOperationFn(context, argsArray[i]);
+        }
+        state = (state || InitialState)[fn];
         if (typeof state === 'function') { // we found some handler
           context.currentOperation = i;
           state = state(context);
@@ -2233,6 +2426,7 @@ var QueueOptimizer = (function QueueOptimizerClosure() {
           ii = context.fnArray.length;
         }
       }
+      this.shapesState = context.shapesState;
     }
   };
   return QueueOptimizer;
