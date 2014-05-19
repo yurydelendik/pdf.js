@@ -504,6 +504,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
       var self = this;
       intentState.displayReadyCapability.promise.then(
         function pageDisplayReadyPromise(transparency) {
+          console.log(intentState.operatorList);
           if (self.pendingDestroy) {
             complete();
             return;
@@ -539,6 +540,58 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
 
       return renderTask;
     },
+
+    getOpList: function PDFPageProxy_getOpList() {
+      return new Promise(function (resolve, reject) {
+        var renderingIntent = 'svg';
+
+        if (!this.intentStates[renderingIntent]) {
+          this.intentStates[renderingIntent] = {};
+        }
+        var intentState = this.intentStates[renderingIntent];
+
+        var svgTask = {};
+        svgTask.operatorListChanged = operatorListChanged;
+
+        if (!intentState.displayReadyCapability) {
+          intentState.receivingOperatorList = true;
+          intentState.displayReadyCapability = createPromiseCapability();
+          intentState.renderTasks = [];
+          intentState.renderTasks.push(svgTask);
+          intentState.operatorList = {
+            fnArray: [],
+            argsArray: [],
+            lastChunk: false
+          };
+
+          this.transport.messageHandler.send('RenderPageRequest', {
+            pageIndex: this.pageNumber - 1,
+            intent: renderingIntent
+          });
+        }
+
+        intentState.displayReadyCapability.promise.then(
+          function opListCapabilityReady() {
+            console.log(intentState.operatorlist);
+            if (intentState.operatorList.lastChunk) {
+              resolve(intentState.operatorList);
+              console.log(intentState.operatorList);
+            }
+            svgTask.operatorListChanged();
+          },
+          function opListCapabilityReject(reason) {
+            reject(reason);
+          });
+
+        function operatorListChanged() {
+          if (intentState.operatorList.lastChunk) {
+            console.log(intentState.operatorList);
+            resolve(intentState.operatorList);
+          }
+        }
+      }.bind(this));
+    },
+
     /**
      * @return {Promise} That is resolved a {@link TextContent}
      * object that represent the page text content.
@@ -600,6 +653,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         intentState.operatorList.argsArray.push(
           operatorListChunk.argsArray[i]);
       }
+
       intentState.operatorList.lastChunk = operatorListChunk.lastChunk;
 
       // Notify all the rendering tasks there are more operators to be consumed.
