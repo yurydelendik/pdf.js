@@ -168,13 +168,9 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
 		},
 
-		executeOperatorList: function SVGGraphics_executeOperatorList(
-														operatorList, executionStartIdx,
-											 			continueCallback) {
-
+		executeOperatorList: function SVGGraphics_executeOperatorList(operatorList) {
 			var argsArray = operatorList.argsArray;
 			var fnArray = operatorList.fnArray;
-			var i = executionStartIdx || 0;
 			var argsArrayLen = argsArray.length;
 			console.log(argsArray);
 			console.log(fnArray);
