@@ -10,7 +10,7 @@
 //
 // Fetch the PDF document from the URL using promises
 //
-PDFJS.getDocument('helloworld.pdf').then(function(pdf) {
+PDFJS.getDocument('ocs.pdf').then(function(pdf) {
   // Using promise to fetch the page
   pdf.getPage(1).then(function(page) {
     var scale = 1.5;
@@ -32,6 +32,8 @@ PDFJS.getDocument('helloworld.pdf').then(function(pdf) {
       viewport: viewport
     };
     page.render(renderContext);
+    page.renderSVG().then(function(list) {
+    });
   });
 });
 
