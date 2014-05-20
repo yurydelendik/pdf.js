@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals CanvasGraphics, combineUrl, createScratchCanvas, error,
+/* globals CanvasGraphics, SVGGraphics, combineUrl, createScratchCanvas, error,
            FontLoader, globalScope, info, isArrayBuffer, loadJpegStream,
            MessageHandler, PDFJS, Promise, StatTimer, warn,
            PasswordResponses, Util, loadScript, createPromiseCapability,
@@ -541,7 +541,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
       return renderTask;
     },
 
-    getOpList: function PDFPageProxy_getOpList() {
+    renderSVG: function PDFPageProxy_getOpList() {
       return new Promise(function (resolve, reject) {
         var renderingIntent = 'svg';
 
@@ -549,8 +549,10 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
           this.intentStates[renderingIntent] = {};
         }
         var intentState = this.intentStates[renderingIntent];
-
         var svgTask = {};
+
+        var svgGfx = new SVGGraphics();
+        console.log("svggfx", svgGfx)
         svgTask.operatorListChanged = operatorListChanged;
 
         if (!intentState.displayReadyCapability) {
@@ -572,12 +574,12 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
 
         intentState.displayReadyCapability.promise.then(
           function opListCapabilityReady() {
-            console.log(intentState.operatorlist);
             if (intentState.operatorList.lastChunk) {
               resolve(intentState.operatorList);
               console.log(intentState.operatorList);
+            } else {
+              svgTask.operatorListChanged();
             }
-            svgTask.operatorListChanged();
           },
           function opListCapabilityReject(reason) {
             reject(reason);
@@ -586,6 +588,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         function operatorListChanged() {
           if (intentState.operatorList.lastChunk) {
             console.log(intentState.operatorList);
+            svgGfx.executeOperatorList(intentState.operatorList)
             resolve(intentState.operatorList);
           }
         }

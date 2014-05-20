@@ -381,7 +381,8 @@ target.bundle = function(args) {
     'display/canvas.js',
     'display/webgl.js',
     'display/pattern_helper.js',
-    'display/font_loader.js'
+    'display/font_loader.js',
+    'display/svg.js'
   ]);
 
   var srcFiles = builder.getWorkerSrcFiles('src/worker_loader.js');
