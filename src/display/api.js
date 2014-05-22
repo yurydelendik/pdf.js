@@ -541,7 +541,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
       return renderTask;
     },
 
-    renderSVG: function PDFPageProxy_getOpList() {
+    renderSVG: function PDFPageProxy_getOpList(renderContext) {
       return new Promise(function (resolve, reject) {
         var renderingIntent = 'svg';
 
@@ -588,7 +588,8 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         function operatorListChanged() {
           if (intentState.operatorList.lastChunk) {
             console.log(intentState.operatorList);
-            svgGfx.executeOperatorList(intentState.operatorList)
+            svgGfx.beginDrawing(renderContext.viewport);
+            svgGfx.executeOperatorList(intentState.operatorList);
             resolve(intentState.operatorList);
           }
         }

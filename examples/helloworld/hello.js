@@ -10,30 +10,32 @@
 //
 // Fetch the PDF document from the URL using promises
 //
-PDFJS.getDocument('ocs.pdf').then(function(pdf) {
+PDFJS.getDocument('helloworld.pdf').then(function(pdf) {
   // Using promise to fetch the page
   pdf.getPage(1).then(function(page) {
     var scale = 1.5;
     var viewport = page.getViewport(scale);
 
-    //
-    // Prepare canvas using PDF page dimensions
-    //
-    var canvas = document.getElementById('the-canvas');
-    var context = canvas.getContext('2d');
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
+
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("id", "hello-svg");
+    svg.setAttribute("version", "1.1");
+    //svg.setAttribute("baseProfile", "full");
+    svg.setAttribute("height", viewport.height);
+    svg.setAttribute("width", viewport.width);
+    //svg.setAttribute("xmlns", "http://wwww.w3.org/2000/svg");
+    //svg.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+
+    document.body.appendChild(svg);
 
     //
     // Render PDF page into canvas context
     //
     var renderContext = {
-      canvasContext: context,
       viewport: viewport
     };
-    page.render(renderContext);
-    page.renderSVG().then(function(list) {
-    });
+    //page.render(renderContext);
+    page.renderSVG(renderContext);
   });
 });
 
