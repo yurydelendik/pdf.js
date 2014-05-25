@@ -23,21 +23,21 @@
 'use strict';
 
 function createScratchSVG(width, height) {
-  var svg = document.createElement('svg');
-  svg.setAttribute("xmlns", "http://wwww.w3.org/2000/svg")
-  svg.setAttribute("version", "1.1");
-  svg.setAttribute("width", width);
-  svg.setAttribute("height", height);
+  var NS = "http://www.w3.org/2000/svg";
+  var svg = document.createElementNS(NS, 'svg:svg');
+  svg.setAttributeNS(null, "version", "1.1");
+  svg.setAttributeNS(null, "width", width + 'px');
+  svg.setAttributeNS(null, "height", height + 'px');
   return svg;
 }
 
 function getContext() {
-  var ctx = document.createElement("g");
+  var ctx = document.createElemenNS("svg:g");
   return ctx;
 }
 
-var CanvasExtraState = (function CanvasExtraStateClosure() {
-  function CanvasExtraState(old) {
+var SVGExtraState = (function SVGExtraStateClosure() {
+  function SVGExtraState(old) {
     // Are soft masks and alpha values shapes or opacities?
     this.fontSize = 0;
     this.fontSizeScale = 1;
@@ -62,7 +62,7 @@ var CanvasExtraState = (function CanvasExtraStateClosure() {
 
   }
 
-  CanvasExtraState.prototype = {
+  SVGExtraState.prototype = {
     clone: function CanvasExtraState_clone() {
       return Object.create(this);
     },
@@ -71,7 +71,7 @@ var CanvasExtraState = (function CanvasExtraStateClosure() {
       this.y = y;
     }
   };
-  return CanvasExtraState;
+  return SVGExtraState;
 })();
 
 function opListToTree(opList) {
@@ -102,21 +102,29 @@ function opListToTree(opList) {
   return opTree;
 }
 
+function applyTextTransform(textMatrix, x, y) {
+  textMatrix[4] = x;
+  textMatrix[5] = y;
+  return textMatrix;
 
+}
 
 
 var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
   function SVGGraphics() {
 
-    this.current = new CanvasExtraState();
+    this.current = new SVGExtraState();
 
   }
 
   SVGGraphics.prototype = {
 
     beginDrawing: function SVGGraphics_beginDrawing(viewport) {
-      this.svg = document.getElementById("hello-svg");
+      console.log("begind drawing svg")
+      this.svg = createScratchSVG(viewport.width, viewport.height);
+      this.NS = "http://www.w3.org/2000/svg";
+      this.container = document.getElementById('pageContainer');
     },
     
     executeOperatorList: function SVGGraphics_executeOperatorList(operatorList) {
@@ -166,8 +174,8 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
     beginText: function SVGGraphics_beginText(args) {
       this.current.textMatrix = IDENTITY_MATRIX;
-      this.text = document.createElement('text');
-      this.text.setAttribute("fill", "black")
+      this.text = document.createElementNS(this.NS, 'svg:text');
+      this.text.setAttributeNS(null, "fill", "black")
     },
 
     setLeading: function SVGGraphics_setLeading(leading) {
@@ -177,8 +185,9 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
     moveText: function SVGGraphics_moveText(x, y) {
       this.current.x = this.current.lineX += x;
       this.current.y = this.current.lineY += y;
-      this.text.setAttribute("x", this.current.x);
-      this.text.setAttribute("y", this.current.y)
+      this.text.setAttributeNS(null, "x", this.current.x);
+      this.text.setAttributeNS(null, "y", this.current.y)
+      this.current.textMatrix = applyTextTransform(this.current.textMatrix, x, y);
     },
 
     showText: function SVGGraphics_showText(text) {
@@ -212,7 +221,7 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
           console.log(text[i].fontChar)
           str += text[i].fontChar;
         }
-        this.text.innerHTML = str;
+        this.text.textContent = str;
     },
 
     /*paintChar: function SVGGraphics_paintChar(character) {
@@ -225,12 +234,14 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
     },
 
     setFont: function SVGGraphics_setFont(details) {
-      this.text.setAttribute("font-family", "verdana");
-      this.text.setAttribute("font-size", details[1]);
+      this.text.setAttributeNS(null, "font-family", "verdana");
+      this.text.setAttributeNS(null, "font-size", details[1]);
     },
 
     endText: function SVGGraphics_endText(args) {
+      this.text.setAttributeNS(null, "transform", "matrix(" + this.current.textMatrix.join(' ') + ")");
       this.svg.appendChild(this.text);
+      this.container.appendChild(this.svg)
     }
 
   }

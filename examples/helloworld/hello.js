@@ -17,16 +17,16 @@ PDFJS.getDocument('helloworld.pdf').then(function(pdf) {
     var viewport = page.getViewport(scale);
 
 
-    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    /*var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg:svg");
     svg.setAttribute("id", "hello-svg");
     svg.setAttribute("version", "1.1");
     //svg.setAttribute("baseProfile", "full");
     svg.setAttribute("height", viewport.height);
-    svg.setAttribute("width", viewport.width);
+    svg.setAttribute("width", viewport.width);*/
     //svg.setAttribute("xmlns", "http://wwww.w3.org/2000/svg");
     //svg.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
 
-    document.body.appendChild(svg);
+    //document.body.appendChild(svg);
 
     //
     // Render PDF page into canvas context
