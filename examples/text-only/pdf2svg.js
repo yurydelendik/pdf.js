@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-var PDF_PATH = '../../web/compressed.tracemonkey-pldi-09.pdf';
+var PDF_PATH = '../helloworld/helloworld.pdf';
 var PAGE_NUMBER = 1;
 var PAGE_SCALE = 1.5;
 var SVG_NS = 'http://www.w3.org/2000/svg';

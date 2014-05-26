@@ -31,11 +31,6 @@ function createScratchSVG(width, height) {
   return svg;
 }
 
-function getContext() {
-  var ctx = document.createElemenNS("svg:g");
-  return ctx;
-}
-
 var SVGExtraState = (function SVGExtraStateClosure() {
   function SVGExtraState(old) {
     // Are soft masks and alpha values shapes or opacities?
@@ -102,13 +97,6 @@ function opListToTree(opList) {
   return opTree;
 }
 
-function applyTextTransform(textMatrix, x, y) {
-  textMatrix[4] = x;
-  textMatrix[5] = y;
-  return textMatrix;
-
-}
-
 
 var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
@@ -121,10 +109,13 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
   SVGGraphics.prototype = {
 
     beginDrawing: function SVGGraphics_beginDrawing(viewport) {
-      console.log("begind drawing svg")
+      console.log("begin drawing svg")
       this.svg = createScratchSVG(viewport.width, viewport.height);
       this.NS = "http://www.w3.org/2000/svg";
       this.container = document.getElementById('pageContainer');
+      this.viewport = viewport;
+      this.transformMatrix = [];
+      this.container.appendChild(this.svg);
     },
     
     executeOperatorList: function SVGGraphics_executeOperatorList(operatorList) {
@@ -154,6 +145,7 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
       for(var x =0; x < opTree.length; x++) {
         var fn = opTree[x].fn;
+
         if (fn == 'beginText') {
           this.beginText(argsArray[x]);
         }
@@ -166,62 +158,86 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
         if (fn == 'showText') {
           this.showText(argsArray[x]);
         }
+        if (fn == 'showSpacedText') {
+          this.showSpacedText(argsArray[x]);
+        }
         if(fn == 'endText') {
           this.endText(argsArray[x]);
+        }
+        if(fn == 'moveText') {
+          this.moveText(argsArray[x]);
         }
       }
     },
 
     beginText: function SVGGraphics_beginText(args) {
-      this.current.textMatrix = IDENTITY_MATRIX;
-      this.text = document.createElementNS(this.NS, 'svg:text');
-      this.text.setAttributeNS(null, "fill", "black")
+      this.current.x = this.current.lineX = 0;
+      this.current.y = this.current.lineY = 0;
+      this.current.trm = IDENTITY_MATRIX;
+      //this.text = document.createElementNS(this.NS, 'svg:text');
     },
 
     setLeading: function SVGGraphics_setLeading(leading) {
       this.current.leading = -leading;
     },
 
-    moveText: function SVGGraphics_moveText(x, y) {
-      this.current.x = this.current.lineX += x;
-      this.current.y = this.current.lineY += y;
-      this.text.setAttributeNS(null, "x", this.current.x);
-      this.text.setAttributeNS(null, "y", this.current.y)
-      this.current.textMatrix = applyTextTransform(this.current.textMatrix, x, y);
+    moveText: function SVGGraphics_moveText(args) {
+      this.current.x = this.current.lineX += args[0];
+      this.current.y = this.current.lineY += args[1];
+      this.current.textMatrix = [1, 0, 0, 1, this.current.x, this.current.y];
     },
 
     showText: function SVGGraphics_showText(text) {
-      /*var current = this.current;
-      var i;
-      for (i =0; i < text.length; i++) {
-        if (text[i] == null) {
-          x += current.fontDirection * wordSpacing;
+      var str = '';
+      var text = text[0];
+      var current = this.current;
+      this.current.fontSize = '7';
+
+      for (var x = 0; x < text.length; x++) {
+        if(text[x] == null) {
           continue;
         }
-
-        width = vmetric ? -vmetric[0] : glyph.width;
-        var charWidth = width * fontSize * current.fontMatrix[0] +
-                        charSpacing * current.fontDirection;
-        var character = text.fontChar;
-
-        this.paintChar(character);
-
-        x += charWidth;*/
-
-        var current = this.current;
-
-        var str = '';
-        var text = text[0];
-        //console.log(text[0]);
-        for (var i = 0; i < text.length; i++) {
-          if (text[i] == null) {
-            //x += current.fontDirection * wordSpacing;
-            continue;
-          }
-          console.log(text[i].fontChar)
-          str += text[i].fontChar;
+        else {
+          str += text[x].fontChar;
+          //this.current.textMatrix = PDFJS.Util.transform(this.current.textMatrix, [1, 0, 0, 1, current.x, current.y]);
         }
-        this.text.textContent = str;
+      }
+
+      var tx = PDFJS.Util.transform(
+        PDFJS.Util.transform(this.viewport.transform, this.current.textMatrix),
+        [1, 0, 0, -1, 0, 0]);
+         
+      var text = document.createElementNS(this.NS, 'svg:text');
+      text.setAttributeNS(null, 'font-size', this.current.fontSize);
+      text.setAttributeNS(null, 'transform', 'matrix(' + tx + ')');
+
+      text.textContent = str;
+      this.svg.appendChild(text);
+
+    },
+
+    showSpacedText: function SVGGraphics_showSpacedText(arr) {
+      var current = this.current;
+      //var font = current.font;
+      var fontSize = current.fontSize;
+      // TJ array's number is independent from fontMatrix
+      var textHScale = current.textHScale * 0.001 * current.fontDirection;
+      var arrLength = arr.length;
+      var vertical = false;
+
+      for (var i = 0; i < arrLength; ++i) {
+        var e = arr[i];
+        if (isNum(e)) {
+          var spacingLength = -e * fontSize * textHScale;
+          if (vertical) {
+            current.y += spacingLength;
+          } else {
+            current.x += spacingLength;
+          }
+        } else {
+          this.showText(e);
+        }
+      }
     },
 
     /*paintChar: function SVGGraphics_paintChar(character) {
@@ -234,14 +250,12 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
     },
 
     setFont: function SVGGraphics_setFont(details) {
-      this.text.setAttributeNS(null, "font-family", "verdana");
-      this.text.setAttributeNS(null, "font-size", details[1]);
+      //this.text.setAttributeNS(null, "font-family", "verdana");
+      //this.text.setAttributeNS(null, "font-size", details[1]);
     },
 
     endText: function SVGGraphics_endText(args) {
-      this.text.setAttributeNS(null, "transform", "matrix(" + this.current.textMatrix.join(' ') + ")");
-      this.svg.appendChild(this.text);
-      this.container.appendChild(this.svg)
+
     }
 
   }
