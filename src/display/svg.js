@@ -141,7 +141,9 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
       opTree = opListToTree(opList);
 
-      console.log(JSON.stringify(opTree));
+      console.log(opTree)
+
+      //window.prompt('', JSON.stringify(opTree));
 
       for(var x =0; x < opTree.length; x++) {
         var fn = opTree[x].fn;
@@ -189,17 +191,20 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
     showText: function SVGGraphics_showText(text) {
       var str = '';
-      var text = text[0];
+      //console.log(text);
       var current = this.current;
-      this.current.fontSize = '7';
+      //this.current.fontSize = '9';
 
       for (var x = 0; x < text.length; x++) {
-        if(text[x] == null) {
+        var tmp = text[x];
+        if (tmp == null) {
+          current.x += current.fontDirection * wordSpacing;
+          console.log(current.x);
           continue;
-        }
-        else {
-          str += text[x].fontChar;
-          //this.current.textMatrix = PDFJS.Util.transform(this.current.textMatrix, [1, 0, 0, 1, current.x, current.y]);
+        } else {
+          for (var y =0; y < tmp.length; y++) {
+            str += tmp[y].fontChar;
+          }
         }
       }
 
@@ -225,14 +230,18 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
       var arrLength = arr.length;
       var vertical = false;
 
+      //console.log(arr)
+
       for (var i = 0; i < arrLength; ++i) {
         var e = arr[i];
         if (isNum(e)) {
           var spacingLength = -e * fontSize * textHScale;
           if (vertical) {
             current.y += spacingLength;
+            current.textMatrix[5] = current.y;
           } else {
             current.x += spacingLength;
+            current.textMatrix[4] = current.x;
           }
         } else {
           this.showText(e);
@@ -250,8 +259,10 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
     },
 
     setFont: function SVGGraphics_setFont(details) {
+      console.log(details)
       //this.text.setAttributeNS(null, "font-family", "verdana");
       //this.text.setAttributeNS(null, "font-size", details[1]);
+      this.current.fontSize = details[1];
     },
 
     endText: function SVGGraphics_endText(args) {
