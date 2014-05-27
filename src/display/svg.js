@@ -28,6 +28,7 @@ function createScratchSVG(width, height) {
   svg.setAttributeNS(null, "version", "1.1");
   svg.setAttributeNS(null, "width", width + 'px');
   svg.setAttributeNS(null, "height", height + 'px');
+  svg.setAttributeNS(null, "font-size", "1");
   return svg;
 }
 
@@ -93,7 +94,6 @@ function opListToTree(opList) {
       opTree.push(opList[x]);
     }
   }
-  
   return opTree;
 }
 
@@ -103,10 +103,27 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
   function SVGGraphics() {
 
     this.current = new SVGExtraState();
+    this.transformMatrix = []; // Graphics state matrix
+    this.transformStack = [];
+    this.extraStack = [];
 
   }
 
   SVGGraphics.prototype = {
+
+    save: function SVGGraphics_save() {
+      this.transformStack.push(this.transformMatrix);
+      this.extraStack.push(this.current);
+    },
+
+    restore: function SVGGraphics_restore() {
+      this.transformMatrix = this.transformStack.pop();
+      this.current = this.extraStack.pop();
+    },
+
+    transform: function SVGGraphics_transform(transformMatrix) {
+      PDFJS.Util.transform(this.transformMatrix, transforMatrix);
+    },
 
     beginDrawing: function SVGGraphics_beginDrawing(viewport) {
       console.log("begin drawing svg")
@@ -143,7 +160,7 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
       console.log(opTree)
 
-      //window.prompt('', JSON.stringify(opTree));
+      window.prompt('', JSON.stringify(opTree));
 
       for(var x =0; x < opTree.length; x++) {
         var fn = opTree[x].fn;
@@ -175,7 +192,9 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
     beginText: function SVGGraphics_beginText(args) {
       this.current.x = this.current.lineX = 0;
       this.current.y = this.current.lineY = 0;
-      this.current.trm = IDENTITY_MATRIX;
+      this.current.textMatrix = IDENTITY_MATRIX;
+      this.current.lineMatrix = IDENTITY_MATRIX;
+      console.log(this.current.textMatrix)
       //this.text = document.createElementNS(this.NS, 'svg:text');
     },
 
@@ -184,53 +203,69 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
     },
 
     moveText: function SVGGraphics_moveText(args) {
+      var current = this.current;
       this.current.x = this.current.lineX += args[0];
       this.current.y = this.current.lineY += args[1];
-      this.current.textMatrix = [1, 0, 0, 1, this.current.x, this.current.y];
+      //this.current.textMatrix = [1, 0, 0, 1, current.x, current.y];
+      this.current.textMatrix[4] = current.x;
+      this.current.textMatrix[5] = current.y;
     },
 
     showText: function SVGGraphics_showText(text) {
       var str = '';
-      //console.log(text);
       var current = this.current;
-      //this.current.fontSize = '9';
+      var fontDirection = current.fontDirection;
+      var fontSize = current.fontSize;
+      var wordSpacing = current.wordSpacing;
+      var textHScale = current.textHScale * fontDirection;
+      var charSpacing = current.charSpacing;
+      var vertical = false;
+      var x = 0;
+      var t = 0;
+
+      current.textMatrix[4] = current.x;
+      current.textMatrix[5] = current.y;
 
       for (var x = 0; x < text.length; x++) {
-        var tmp = text[x];
-        if (tmp == null) {
-          current.x += current.fontDirection * wordSpacing;
-          console.log(current.x);
+        if (text[x] == null) {
           continue;
         } else {
-          for (var y =0; y < tmp.length; y++) {
-            str += tmp[y].fontChar;
-          }
+          str += text[x].fontChar;
         }
+
+        var charWidth = text[x].width * fontSize * 0.001 + charSpacing * current.fontDirection;
+        t += charWidth;
+      }
+
+      if (vertical) {
+        current.y -= t * textHScale;
+      } else {
+        current.x += t * textHScale;
       }
 
       var tx = PDFJS.Util.transform(
-        PDFJS.Util.transform(this.viewport.transform, this.current.textMatrix),
+        PDFJS.Util.transform(this.viewport.transform, current.textMatrix),
         [1, 0, 0, -1, 0, 0]);
-         
+
       var text = document.createElementNS(this.NS, 'svg:text');
+      text.textContent = str;
       text.setAttributeNS(null, 'font-size', this.current.fontSize);
       text.setAttributeNS(null, 'transform', 'matrix(' + tx + ')');
-
-      text.textContent = str;
       this.svg.appendChild(text);
-
     },
 
     showSpacedText: function SVGGraphics_showSpacedText(arr) {
       var current = this.current;
       //var font = current.font;
       var fontSize = current.fontSize;
+      var charSpacing = current.charSpacing;
       // TJ array's number is independent from fontMatrix
       var textHScale = current.textHScale * 0.001 * current.fontDirection;
-      var arrLength = arr.length;
+      var arrLength = arr[0].length;
       var vertical = false;
 
-      //console.log(arr)
+      var x = 0;
+      var arr = arr[0];
 
       for (var i = 0; i < arrLength; ++i) {
         var e = arr[i];
@@ -238,15 +273,14 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
           var spacingLength = -e * fontSize * textHScale;
           if (vertical) {
             current.y += spacingLength;
-            current.textMatrix[5] = current.y;
           } else {
             current.x += spacingLength;
-            current.textMatrix[4] = current.x;
           }
         } else {
           this.showText(e);
         }
       }
+
     },
 
     /*paintChar: function SVGGraphics_paintChar(character) {
@@ -255,14 +289,21 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
     setLeadingMoveText: function SVGGraphics_setLeadingMoveText(coords) {
       this.setLeading(-coords[1]);
-      this.moveText(coords[0], coords[1]);
+      this.moveText(coords);
     },
 
     setFont: function SVGGraphics_setFont(details) {
-      console.log(details)
+      var current = this.current;
       //this.text.setAttributeNS(null, "font-family", "verdana");
       //this.text.setAttributeNS(null, "font-size", details[1]);
-      this.current.fontSize = details[1];
+      var size = details[1];
+      if (size < 0) {
+        size = -size;
+        current.fontDirection = -1;
+      } else {
+        current.fontDirection = 1;
+      }
+      current.fontSize = size;
     },
 
     endText: function SVGGraphics_endText(args) {
