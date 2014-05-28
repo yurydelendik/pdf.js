@@ -28,7 +28,6 @@ function createScratchSVG(width, height) {
   svg.setAttributeNS(null, "version", "1.1");
   svg.setAttributeNS(null, "width", width + 'px');
   svg.setAttributeNS(null, "height", height + 'px');
-  svg.setAttributeNS(null, "font-size", "1");
   return svg;
 }
 
@@ -48,7 +47,7 @@ var SVGExtraState = (function SVGExtraStateClosure() {
     this.lineY = 0;
     // Character and word spacing
     this.charSpacing = 0;
-    this.wordSpacing = 0;
+    this.wordSpacing = 1;
     this.textHScale = 1;
     this.textRenderingMode = TextRenderingMode.FILL;
     this.textRise = 0;
@@ -100,12 +99,13 @@ function opListToTree(opList) {
 
 var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
-  function SVGGraphics() {
+  function SVGGraphics(commonObjs) {
 
     this.current = new SVGExtraState();
     this.transformMatrix = []; // Graphics state matrix
     this.transformStack = [];
     this.extraStack = [];
+    this.commonObjs = commonObjs;
 
   }
 
@@ -206,9 +206,9 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
       var current = this.current;
       this.current.x = this.current.lineX += args[0];
       this.current.y = this.current.lineY += args[1];
-      //this.current.textMatrix = [1, 0, 0, 1, current.x, current.y];
       this.current.textMatrix[4] = current.x;
       this.current.textMatrix[5] = current.y;
+      //current.textMatrix = PDFJS.Util.transform([1, 0, 0, 1, args[0], args[1]], current.textMatrix)
     },
 
     showText: function SVGGraphics_showText(text) {
@@ -220,43 +220,42 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
       var textHScale = current.textHScale * fontDirection;
       var charSpacing = current.charSpacing;
       var vertical = false;
-      var x = 0;
-      var t = 0;
+      var font = current.font;
+      var style = current.font.style;
 
-      current.textMatrix[4] = current.x;
-      current.textMatrix[5] = current.y;
+
+
+      var tx = PDFJS.Util.transform(this.viewport.transform, current.textMatrix); // Apply viewport transform
+      tx = PDFJS.Util.transform(tx, [1, 0, 0, -1, 0, 0]); // Flip text
+
+      var t = 0;
 
       for (var x = 0; x < text.length; x++) {
         if (text[x] == null) {
+          t += current.fontDirection * wordSpacing;
           continue;
         } else {
           str += text[x].fontChar;
+          var charWidth = text[x].width * fontSize * current.fontMatrix[0] + charSpacing * current.fontDirection;
+          t += charWidth;
         }
-
-        var charWidth = text[x].width * fontSize * 0.001 + charSpacing * current.fontDirection;
-        t += charWidth;
       }
 
-      if (vertical) {
-        current.y -= t * textHScale;
-      } else {
-        current.x += t * textHScale;
-      }
+      current.x += t * textHScale;
+      current.textMatrix[4] = current.x;
 
-      var tx = PDFJS.Util.transform(
-        PDFJS.Util.transform(this.viewport.transform, current.textMatrix),
-        [1, 0, 0, -1, 0, 0]);
-
-      var text = document.createElementNS(this.NS, 'svg:text');
-      text.textContent = str;
-      text.setAttributeNS(null, 'font-size', this.current.fontSize);
-      text.setAttributeNS(null, 'transform', 'matrix(' + tx + ')');
-      this.svg.appendChild(text);
+      var txtElement = document.createElementNS(this.NS, 'svg:text');
+      txtElement.textContent = str;
+      txtElement.setAttributeNS(null, 'font-family', 'verdana');
+      txtElement.setAttributeNS(null, 'font-size', current.fontSize);
+      txtElement.setAttributeNS(null, 'style', current.font.style);
+      txtElement.setAttributeNS(null, 'transform', 'matrix(' + tx + ')');
+      this.svg.appendChild(txtElement);
     },
 
     showSpacedText: function SVGGraphics_showSpacedText(arr) {
       var current = this.current;
-      //var font = current.font;
+      var font = current.font;
       var fontSize = current.fontSize;
       var charSpacing = current.charSpacing;
       // TJ array's number is independent from fontMatrix
@@ -273,19 +272,18 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
           var spacingLength = -e * fontSize * textHScale;
           if (vertical) {
             current.y += spacingLength;
+            current.textMatrix[5] = current.y;
           } else {
             current.x += spacingLength;
+            current.textMatrix[4] = current.x;
           }
         } else {
           this.showText(e);
         }
+        
       }
 
     },
-
-    /*paintChar: function SVGGraphics_paintChar(character) {
-
-    }*/
 
     setLeadingMoveText: function SVGGraphics_setLeadingMoveText(coords) {
       this.setLeading(-coords[1]);
@@ -294,9 +292,21 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
     setFont: function SVGGraphics_setFont(details) {
       var current = this.current;
-      //this.text.setAttributeNS(null, "font-family", "verdana");
-      //this.text.setAttributeNS(null, "font-size", details[1]);
+      var fontObj = this.commonObjs.get(details[0]);
       var size = details[1];
+      this.current.font = fontObj;
+
+      current.fontMatrix = (fontObj.fontMatrix ?
+                           fontObj.fontMatrix : FONT_IDENTITY_MATRIX);
+
+      var bold = fontObj.black ? (fontObj.bold ? 'bolder' : 'bold') :
+                                 (fontObj.bold ? 'bold' : 'normal');
+
+      var italic = fontObj.italic ? 'italic' : 'normal';
+
+      current.font.style = (bold == 'normal' ? (italic == 'normal' ? '' : 'font-weight:' + italic) :
+                                                   'font-weight:' + bold);
+
       if (size < 0) {
         size = -size;
         current.fontDirection = -1;
@@ -304,6 +314,7 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
         current.fontDirection = 1;
       }
       current.fontSize = size;
+      current.fontFamily = fontObj.loadedName;
     },
 
     endText: function SVGGraphics_endText(args) {
