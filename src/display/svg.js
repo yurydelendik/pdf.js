@@ -28,6 +28,7 @@ function createScratchSVG(width, height) {
   svg.setAttributeNS(null, "version", "1.1");
   svg.setAttributeNS(null, "width", width + 'px');
   svg.setAttributeNS(null, "height", height + 'px');
+  svg.setAttributeNS(null, "viewBox", "0 0 " + width + " " + height);
   return svg;
 }
 
@@ -106,7 +107,6 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
     this.transformStack = [];
     this.extraStack = [];
     this.commonObjs = commonObjs;
-
   }
 
   SVGGraphics.prototype = {
@@ -160,7 +160,7 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
 
       console.log(opTree)
 
-      window.prompt('', JSON.stringify(opTree));
+      //window.prompt('', JSON.stringify(opTree));
 
       for(var x =0; x < opTree.length; x++) {
         var fn = opTree[x].fn;

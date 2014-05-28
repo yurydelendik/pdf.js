@@ -551,8 +551,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         var intentState = this.intentStates[renderingIntent];
         var svgTask = {};
 
-        var svgGfx = new SVGGraphics();
-        console.log("svggfx", svgGfx)
+        var svgGfx = new SVGGraphics(this.commonObjs);
         svgTask.operatorListChanged = operatorListChanged;
 
         if (!intentState.displayReadyCapability) {
