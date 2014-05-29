@@ -18,7 +18,7 @@
 
 // optimised CSS custom property getter/setter
 var CustomStyle = (function CustomStyleClosure() {
-
+//#if !MOZCENTRAL
   // As noted on: http://www.zachstronaut.com/posts/2009/02/17/
   //              animate-css-transforms-firefox-webkit.html
   // in some versions of IE9 it is critical that ms appear in this list
@@ -65,6 +65,13 @@ var CustomStyle = (function CustomStyleClosure() {
   };
 
   return CustomStyle;
+//#else
+//return {
+//  setProp: function CustomStyle_set(propName, element, str) {
+//    element.style[propName] = str;
+//  }
+//};
+//#endif
 })();
 
 function getFileName(url) {
