@@ -28,7 +28,7 @@ function createScratchSVG(width, height) {
   svg.setAttributeNS(null, "version", "1.1");
   svg.setAttributeNS(null, "width", width + 'px');
   svg.setAttributeNS(null, "height", height + 'px');
-  svg.setAttributeNS(null, "viewBox", "0 0 " + width + " " + height);
+  svg.setAttributeNS(null, "viewBox", "0 " + (-height) + " " + width + " " + height);
   return svg;
 }
 
@@ -48,7 +48,7 @@ var SVGExtraState = (function SVGExtraStateClosure() {
     this.lineY = 0;
     // Character and word spacing
     this.charSpacing = 0;
-    this.wordSpacing = 1;
+    this.wordSpacing = 0;
     this.textHScale = 1;
     this.textRenderingMode = TextRenderingMode.FILL;
     this.textRise = 0;
@@ -56,6 +56,9 @@ var SVGExtraState = (function SVGExtraStateClosure() {
     this.fillColor = '#000000';
     this.strokeColor = '#000000';
 
+    // Dependency
+    this.dependencies = [];
+    this.count = 0;
   }
 
   SVGExtraState.prototype = {
@@ -99,7 +102,6 @@ function opListToTree(opList) {
 
 
 var SVGGraphics = (function SVGGraphicsClosure(ctx) {
-
   function SVGGraphics(commonObjs) {
 
     this.current = new SVGExtraState();
@@ -107,6 +109,7 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
     this.transformStack = [];
     this.extraStack = [];
     this.commonObjs = commonObjs;
+
   }
 
   SVGGraphics.prototype = {
@@ -161,8 +164,9 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
       console.log(opTree)
 
       //window.prompt('', JSON.stringify(opTree));
+      var opTreeLen = opTree.length;
 
-      for(var x =0; x < opTree.length; x++) {
+      for(var x =0; x < opTreeLen; x++) {
         var fn = opTree[x].fn;
 
         if (fn == 'beginText') {
@@ -189,13 +193,47 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
       }
     },
 
+    loadDependencies: function SVGGraphics_loadDependencies(operatorList) {
+      //var fnArray = operatorList.fnArray;
+      console.log(operatorList);
+      var fnArray = operatorList.fnArray;
+      var fnArrayLen = fnArray.length;
+      var argsArray = operatorList.argsArray;
+
+      var self = this;
+      for (var i = 0; i < fnArrayLen; i++) {
+        if (OPS.dependency == fnArray[i]) {
+          var deps = argsArray[i];
+          console.log(deps);
+          for (var n = 0, nn = deps.length; n < nn; n++) {
+            var obj = deps[n];
+            var common = obj.substring(0, 2) == 'g_';
+            if (common) {
+              var promise = new Promise(function(resolve) {
+                self.commonObjs.get(obj, resolve);
+              });
+            }
+          }
+        }
+        this.current.dependencies.push(promise);
+      }
+      Promise.all(this.current.dependencies).then(function(values) {
+        console.log('All dependencies resolved')
+        self.executeOperatorList(operatorList);
+      });
+    },
+
+
     beginText: function SVGGraphics_beginText(args) {
       this.current.x = this.current.lineX = 0;
       this.current.y = this.current.lineY = 0;
       this.current.textMatrix = IDENTITY_MATRIX;
       this.current.lineMatrix = IDENTITY_MATRIX;
-      console.log(this.current.textMatrix)
-      //this.text = document.createElementNS(this.NS, 'svg:text');
+      this.current.txtElement = document.createElementNS(this.NS, 'svg:text');
+      this.current.grp = document.createElementNS(this.NS, 'svg:g');
+      this.current.tspan = document.createElementNS(this.NS, 'svg:tspan');
+      this.current.xcoords = [];
+      this.current.ycoords = [];
     },
 
     setLeading: function SVGGraphics_setLeading(leading) {
@@ -208,10 +246,18 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
       this.current.y = this.current.lineY += args[1];
       this.current.textMatrix[4] = current.x;
       this.current.textMatrix[5] = current.y;
-      //current.textMatrix = PDFJS.Util.transform([1, 0, 0, 1, args[0], args[1]], current.textMatrix)
+
+      current.xcoords = [];
+      current.tspan = document.createElementNS(this.NS, 'svg:tspan');
+      current.tspan.setAttributeNS(null, 'font-family', current.fontFamily);
+      current.tspan.setAttributeNS(null, 'font-size', current.fontSize);
+      current.tspan.setAttributeNS(null, 'y', -current.y);
+
+      current.xcoords.push(current.x);
+      current.ycoords.push(-current.y);
     },
 
-    showText: function SVGGraphics_showText(text) {
+    showText: function SVGGraphics_showText(glyphs) {
       var str = '';
       var current = this.current;
       var fontDirection = current.fontDirection;
@@ -222,35 +268,35 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
       var vertical = false;
       var font = current.font;
       var style = current.font.style;
+      var glyphsLen = glyphs.length
 
-
-
-      var tx = PDFJS.Util.transform(this.viewport.transform, current.textMatrix); // Apply viewport transform
-      tx = PDFJS.Util.transform(tx, [1, 0, 0, -1, 0, 0]); // Flip text
-
-      var t = 0;
-
-      for (var x = 0; x < text.length; x++) {
-        if (text[x] == null) {
-          t += current.fontDirection * wordSpacing;
+      for (var x = 0; x < glyphsLen; x++) {
+        if (glyphs[x] == null) {
+          current.x += current.fontDirection * wordSpacing * textHScale;
+          current.xcoords.push(current.x);
           continue;
         } else {
-          str += text[x].fontChar;
-          var charWidth = text[x].width * fontSize * current.fontMatrix[0] + charSpacing * current.fontDirection;
-          t += charWidth;
+          str += glyphs[x].fontChar;
+          var charWidth = glyphs[x].width * fontSize * current.fontMatrix[0] + charSpacing * current.fontDirection;
+          current.x += charWidth * textHScale;
+          current.xcoords.push(current.x);
         }
       }
-
-      current.x += t * textHScale;
       current.textMatrix[4] = current.x;
+      current.textMatrix[5] = current.y;
 
-      var txtElement = document.createElementNS(this.NS, 'svg:text');
-      txtElement.textContent = str;
-      txtElement.setAttributeNS(null, 'font-family', 'verdana');
-      txtElement.setAttributeNS(null, 'font-size', current.fontSize);
-      txtElement.setAttributeNS(null, 'style', current.font.style);
-      txtElement.setAttributeNS(null, 'transform', 'matrix(' + tx + ')');
-      this.svg.appendChild(txtElement);
+      current.txtElement.setAttributeNS(null, 'transform', 'scale(1, -1)');
+      current.txtElement.setAttributeNS("http://www.w3.org/XML/1998/namespace", 'xml:space', 'preserve');
+
+      current.tspan.setAttributeNS(null, 'x', current.xcoords.join(" "));
+      current.tspan.setAttributeNS(null, 'y', -current.y);
+      current.tspan.textContent += str;
+
+      current.txtElement.appendChild(current.tspan);
+      current.grp.setAttributeNS(null, 'transform', 'scale(2, -2)');
+      current.grp.appendChild(current.txtElement);
+      this.svg.appendChild(current.grp);
+
     },
 
     showSpacedText: function SVGGraphics_showSpacedText(arr) {
@@ -259,7 +305,7 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
       var fontSize = current.fontSize;
       var charSpacing = current.charSpacing;
       // TJ array's number is independent from fontMatrix
-      var textHScale = current.textHScale * 0.001 * current.fontDirection;
+      var textHScale = current.textHScale * current.fontMatrix[0] * current.fontDirection;
       var arrLength = arr[0].length;
       var vertical = false;
 
@@ -275,14 +321,16 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
             current.textMatrix[5] = current.y;
           } else {
             current.x += spacingLength;
+
+
             current.textMatrix[4] = current.x;
           }
+          current.xcoords.push(current.x);
+          current.tspan.textContent += " ";
         } else {
           this.showText(e);
         }
-        
       }
-
     },
 
     setLeadingMoveText: function SVGGraphics_setLeadingMoveText(coords) {
@@ -315,10 +363,13 @@ var SVGGraphics = (function SVGGraphicsClosure(ctx) {
       }
       current.fontSize = size;
       current.fontFamily = fontObj.loadedName;
+
+      
     },
 
     endText: function SVGGraphics_endText(args) {
-
+      console.log(this.current.count);
+      console.log(this.current.xcoords.length)
     }
 
   }
