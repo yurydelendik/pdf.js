@@ -359,13 +359,11 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       pf(m[3]) + ' ' + pf(m[4]) + ' ' + pf(m[5]) + ')';
   }
 
-  function SVGGraphics(commonObjs, objs) {
+  function SVGGraphics() {
     this.current = new SVGExtraState();
     this.transformMatrix = IDENTITY_MATRIX; // Graphics state matrix
     this.transformStack = [];
     this.extraStack = [];
-    this.commonObjs = commonObjs;
-    this.objs = objs;
     this.pendingEOFill = false;
 
     this.embedFonts = false;
@@ -404,7 +402,11 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       this.restore();
     },
 
-    loadDependencies: function SVGGraphics_loadDependencies(operatorList) {
+    loadDependencies: function SVGGraphics_loadDependencies(operatorList,
+                                                            commonObjs) {
+      this.commonObjs = commonObjs;
+      this.objs = operatorList.objs;
+
       var fnArray = operatorList.fnArray;
       var fnArrayLen = fnArray.length;
       var argsArray = operatorList.argsArray;
@@ -442,11 +444,11 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       this.tgrp.setAttributeNS(null, 'transform', pm(this.transformMatrix));
     },
 
-    getSVG: function SVGGraphics_getSVG(operatorList, viewport) {
+    getSVG: function SVGGraphics_getSVG(operatorList, commonObjs, viewport) {
       this.svg = createScratchSVG(viewport.width, viewport.height);
       this.viewport = viewport;
 
-      return this.loadDependencies(operatorList).then(function () {
+      return this.loadDependencies(operatorList, commonObjs).then(function () {
         this.transformMatrix = IDENTITY_MATRIX;
         this.pgrp = document.createElementNS(NS, 'svg:g'); // Parent group
         this.pgrp.setAttributeNS(null, 'transform', pm(viewport.transform));

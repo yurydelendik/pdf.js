@@ -28,12 +28,12 @@
 'use strict';
 
 var PartialEvaluator = (function PartialEvaluatorClosure() {
-  function PartialEvaluator(pdfManager, xref, handler, pageIndex,
+  function PartialEvaluator(pdfManager, xref, handler, requestId,
                             uniquePrefix, idCounters, fontCache) {
     this.pdfManager = pdfManager;
     this.xref = xref;
     this.handler = handler;
-    this.pageIndex = pageIndex;
+    this.requestId = requestId;
     this.uniquePrefix = uniquePrefix;
     this.idCounters = idCounters;
     this.fontCache = fontCache;
@@ -245,18 +245,18 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         // These JPEGs don't need any more processing so we can just send it.
         operatorList.addOp(OPS.paintJpegXObject, args);
         this.handler.send('obj',
-          [objId, this.pageIndex, 'JpegStream', image.getIR()]);
+          [objId, this.requestId, 'JpegStream', image.getIR()]);
         return;
       }
 
       PDFImage.buildImage(self.handler, self.xref, resources, image, inline).
         then(function(imageObj) {
           var imgData = imageObj.createImageData(/* forceRGBA = */ false);
-          self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData],
+          self.handler.send('obj', [objId, self.requestId, 'Image', imgData],
             [imgData.data.buffer]);
         }).then(undefined, function (reason) {
           warn('Unable to decode image: ' + reason);
-          self.handler.send('obj', [objId, self.pageIndex, 'Image', null]);
+          self.handler.send('obj', [objId, self.requestId, 'Image', null]);
         });
 
       operatorList.addOp(OPS.paintImageXObject, args);
@@ -1828,12 +1828,12 @@ var OperatorList = (function OperatorListClosure() {
     return transfers;
   }
 
-  function OperatorList(intent, messageHandler, pageIndex) {
+  function OperatorList(intent, messageHandler, requestId) {
+    this.requestId = requestId;
     this.messageHandler = messageHandler;
     this.fnArray = [];
     this.argsArray = [];
     this.dependencies = {};
-    this.pageIndex = pageIndex;
     this.intent = intent;
   }
 
@@ -1890,15 +1890,14 @@ var OperatorList = (function OperatorListClosure() {
         new QueueOptimizer().optimize(this);
       }
       var transfers = getTransfers(this);
-      this.messageHandler.send('RenderPageChunk', {
+      this.messageHandler.send('OperatorListChunk', {
         operatorList: {
           fnArray: this.fnArray,
           argsArray: this.argsArray,
           lastChunk: lastChunk,
           length: this.length
         },
-        pageIndex: this.pageIndex,
-        intent: this.intent
+        requestId: this.requestId
       }, transfers);
       this.dependencies = {};
       this.fnArray.length = 0;

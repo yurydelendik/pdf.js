@@ -154,7 +154,7 @@ var Page = (function PageClosure() {
       }.bind(this));
     },
 
-    getOperatorList: function Page_getOperatorList(handler, intent) {
+    getOperatorList: function Page_getOperatorList(handler, requestId, intent) {
       var self = this;
 
       var pdfManager = this.pdfManager;
@@ -172,7 +172,7 @@ var Page = (function PageClosure() {
       ]);
 
       var partialEvaluator = new PartialEvaluator(pdfManager, this.xref,
-                                                  handler, this.pageIndex,
+                                                  handler, requestId,
                                                   'p' + this.pageIndex + '_',
                                                   this.idCounters,
                                                   this.fontCache);
@@ -180,12 +180,17 @@ var Page = (function PageClosure() {
       var dataPromises = Promise.all([contentStreamPromise, resourcesPromise]);
       var pageListPromise = dataPromises.then(function(data) {
         var contentStream = data[0];
-        var opList = new OperatorList(intent, handler, self.pageIndex);
+        var opList = new OperatorList(intent, handler, requestId);
 
-        handler.send('StartRenderPage', {
-          transparency: partialEvaluator.hasBlendModes(self.resources),
+        // TODO remove for non-canvas rendering modes
+        var opListParams = {
+          transparency: partialEvaluator.hasBlendModes(self.resources)
+        };
+
+        handler.send('OperatorListInit', {
           pageIndex: self.pageIndex,
-          intent: intent
+          requestId: requestId,
+          params: opListParams
         });
         return partialEvaluator.getOperatorList(contentStream, self.resources,
           opList).then(function () {
@@ -236,7 +241,7 @@ var Page = (function PageClosure() {
       return dataPromises.then(function(data) {
         var contentStream = data[0];
         var partialEvaluator = new PartialEvaluator(pdfManager, self.xref,
-                                                    handler, self.pageIndex,
+                                                    handler, -1,
                                                     'p' + self.pageIndex + '_',
                                                     self.idCounters,
                                                     self.fontCache);

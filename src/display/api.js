@@ -455,10 +455,9 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
     this.stats = new StatTimer();
     this.stats.enabled = !!globalScope.PDFJS.enableStats;
     this.commonObjs = transport.commonObjs;
-    this.objs = new PDFObjects();
     this.cleanupAfterRender = false;
     this.pendingDestroy = false;
-    this.intentStates = {};
+    this.renderingIntentCache = Object.create(null);
   }
   PDFPageProxy.prototype = /** @lends PDFPageProxy.prototype */ {
     /**
@@ -528,78 +527,63 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
       this.pendingDestroy = false;
 
       var renderingIntent = (params.intent === 'print' ? 'print' : 'display');
-
-      if (!this.intentStates[renderingIntent]) {
-        this.intentStates[renderingIntent] = {};
-      }
-      var intentState = this.intentStates[renderingIntent];
-
-      // If there's no displayReadyCapability yet, then the operatorList
-      // was never requested before. Make the request and create the promise.
-      if (!intentState.displayReadyCapability) {
-        intentState.receivingOperatorList = true;
-        intentState.displayReadyCapability = createPromiseCapability();
-        intentState.operatorList = {
-          fnArray: [],
-          argsArray: [],
-          lastChunk: false
+      var cacheEntry = this.renderingIntentCache[renderingIntent];
+      if (!cacheEntry) {
+        cacheEntry = {
+          operatorList: new PDFOperatorList(this, renderingIntent),
+          tasks: []
+        };
+        cacheEntry.operatorList.onUpdated = function () {
+          cacheEntry.tasks.forEach(function (task) {
+            task.operatorListChanged();
+          });
         };
 
-        this.stats.time('Page Request');
-        this.transport.messageHandler.send('RenderPageRequest', {
-          pageIndex: this.pageNumber - 1,
-          intent: renderingIntent
-        });
+        this.renderingIntentCache[renderingIntent] = cacheEntry;
       }
 
-      var internalRenderTask = new InternalRenderTask(complete, params,
-                                                      this.objs,
+      this.stats.time('Page Request');
+
+      var internalRenderTask = new InternalRenderTask(params,
                                                       this.commonObjs,
-                                                      intentState.operatorList,
+                                                      cacheEntry.operatorList,
                                                       this.pageNumber);
-      if (!intentState.renderTasks) {
-        intentState.renderTasks = [];
-      }
-      intentState.renderTasks.push(internalRenderTask);
-      var renderTask = new RenderTask(internalRenderTask);
+      cacheEntry.tasks.push(internalRenderTask);
+
+      var performsRendering = false;
+      var onPageDisplayReadyPromise = function () {
+          stats.time('Rendering');
+          performsRendering = true;
+      };
+      cacheEntry.operatorList.initialized.then(onPageDisplayReadyPromise, null);
+      var onPageOperatorListLoaded = function () {
+        stats.timeEnd('Page Request');
+      };
+      cacheEntry.operatorList.loaded.then(onPageOperatorListLoaded,
+                                          onPageOperatorListLoaded);
 
       var self = this;
-      intentState.displayReadyCapability.promise.then(
-        function pageDisplayReadyPromise(transparency) {
-          if (self.pendingDestroy) {
-            complete();
-            return;
-          }
-          stats.time('Rendering');
-          internalRenderTask.initalizeGraphics(transparency);
-          internalRenderTask.operatorListChanged();
-        },
-        function pageDisplayReadPromiseError(reason) {
-          complete(reason);
+      var onPageRenderComplete = function () {
+        var i = cacheEntry.tasks.indexOf(internalRenderTask);
+        if (i < 0) {
+          return; // already removed
         }
-      );
+        cacheEntry.tasks.splice(i, 1);
 
-      function complete(error) {
-        var i = intentState.renderTasks.indexOf(internalRenderTask);
-        if (i >= 0) {
-          intentState.renderTasks.splice(i, 1);
-        }
-
-        if (self.cleanupAfterRender) {
+        if (cacheEntry.operatorList.cleanupAfterRender) {
           self.pendingDestroy = true;
         }
         self._tryDestroy();
 
-        if (error) {
-          internalRenderTask.capability.reject(error);
-        } else {
-          internalRenderTask.capability.resolve();
+        if (performsRendering) {
+          stats.timeEnd('Rendering');
         }
-        stats.timeEnd('Rendering');
         stats.timeEnd('Overall');
-      }
+      };
+      internalRenderTask.capability.promise.then(onPageRenderComplete,
+                                                 onPageRenderComplete);
 
-      return renderTask;
+      return new RenderTask(internalRenderTask);
     },
 
     /**
@@ -607,37 +591,10 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
      * object that represents page's operator list.
      */
     getOperatorList: function PDFPageProxy_getOperatorList() {
-      function operatorListChanged() {
-        if (intentState.operatorList.lastChunk) {
-          intentState.opListReadCapability.resolve(intentState.operatorList);
-        }
-      }
-
-      var renderingIntent = 'oplist';
-      if (!this.intentStates[renderingIntent]) {
-        this.intentStates[renderingIntent] = {};
-      }
-      var intentState = this.intentStates[renderingIntent];
-
-      if (!intentState.opListReadCapability) {
-        var opListTask = {};
-        opListTask.operatorListChanged = operatorListChanged;
-        intentState.receivingOperatorList = true;
-        intentState.opListReadCapability = createPromiseCapability();
-        intentState.renderTasks = [];
-        intentState.renderTasks.push(opListTask);
-        intentState.operatorList = {
-          fnArray: [],
-          argsArray: [],
-          lastChunk: false
-        };
-
-        this.transport.messageHandler.send('RenderPageRequest', {
-          pageIndex: this.pageIndex,
-          intent: renderingIntent
-        });
-      }
-      return intentState.opListReadCapability.promise;
+      var operatorList = new PDFOperatorList(this, 'oplist');
+      return operatorList.loaded.then(function () {
+        return operatorList;
+      });
     },
 
     /**
@@ -663,59 +620,15 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
      */
     _tryDestroy: function PDFPageProxy__destroy() {
       if (!this.pendingDestroy ||
-          Object.keys(this.intentStates).some(function(intent) {
-            var intentState = this.intentStates[intent];
-            return (intentState.renderTasks.length !== 0 ||
-                    intentState.receivingOperatorList);
+          Object.keys(this.renderingIntentCache).some(function(intent) {
+            return this.renderingIntentCache[intent].tasks.length > 0;
           }, this)) {
         return;
       }
 
-      Object.keys(this.intentStates).forEach(function(intent) {
-        delete this.intentStates[intent];
-      }, this);
-      this.objs.clear();
+      this.renderingIntentCache = Object.create(null);
       this.annotationsPromise = null;
       this.pendingDestroy = false;
-    },
-    /**
-     * For internal use only.
-     * @ignore
-     */
-    _startRenderPage: function PDFPageProxy_startRenderPage(transparency,
-                                                            intent) {
-      var intentState = this.intentStates[intent];
-      // TODO Refactor RenderPageRequest to separate rendering
-      // and operator list logic
-      if (intentState.displayReadyCapability) {
-        intentState.displayReadyCapability.resolve(transparency);
-      }
-    },
-    /**
-     * For internal use only.
-     * @ignore
-     */
-    _renderPageChunk: function PDFPageProxy_renderPageChunk(operatorListChunk,
-                                                            intent) {
-      var intentState = this.intentStates[intent];
-      var i, ii;
-      // Add the new chunk to the current operator list.
-      for (i = 0, ii = operatorListChunk.length; i < ii; i++) {
-        intentState.operatorList.fnArray.push(operatorListChunk.fnArray[i]);
-        intentState.operatorList.argsArray.push(
-          operatorListChunk.argsArray[i]);
-      }
-      intentState.operatorList.lastChunk = operatorListChunk.lastChunk;
-
-      // Notify all the rendering tasks there are more operators to be consumed.
-      for (i = 0; i < intentState.renderTasks.length; i++) {
-        intentState.renderTasks[i].operatorListChanged();
-      }
-
-      if (operatorListChunk.lastChunk) {
-        intentState.receivingOperatorList = false;
-        this._tryDestroy();
-      }
     }
   };
   return PDFPageProxy;
@@ -734,6 +647,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
     this.workerReadyCapability = workerReadyCapability;
     this.progressCallback = progressCallback;
     this.commonObjs = new PDFObjects();
+    this.operatorListRequests = [];
 
     this.pageCache = [];
     this.pagePromises = [];
@@ -942,17 +856,22 @@ var WorkerTransport = (function WorkerTransportClosure() {
         }
       }, this);
 
-      messageHandler.on('StartRenderPage', function transportRender(data) {
-        var page = this.pageCache[data.pageIndex];
-
-        page.stats.timeEnd('Page Request');
-        page._startRenderPage(data.transparency, data.intent);
+      messageHandler.on('OperatorListInit',
+          function transportOperatorListInit(data) {
+        var request = this.operatorListRequests[data.requestId];
+        request._initialize(data.params);
       }, this);
 
-      messageHandler.on('RenderPageChunk', function transportRender(data) {
-        var page = this.pageCache[data.pageIndex];
+      messageHandler.on('OperatorListChunk',
+          function transportOperatorListChunk(data) {
+        var request = this.operatorListRequests[data.requestId];
+        request._appendChunk(data.operatorList);
+      }, this);
 
-        page._renderPageChunk(data.operatorList, data.intent);
+      messageHandler.on('OperatorListError',
+          function transportOperatorListError(data) {
+        var request = this.operatorListRequests[data.requestId];
+        request._fail(data.error);
       }, this);
 
       messageHandler.on('commonobj', function transportObj(data) {
@@ -993,28 +912,28 @@ var WorkerTransport = (function WorkerTransportClosure() {
 
       messageHandler.on('obj', function transportObj(data) {
         var id = data[0];
-        var pageIndex = data[1];
+        var requestId = data[1];
         var type = data[2];
-        var pageProxy = this.pageCache[pageIndex];
+        var opList = this.operatorListRequests[requestId];
         var imageData;
-        if (pageProxy.objs.hasData(id)) {
+        if (opList.objs.hasData(id)) {
           return;
         }
 
         switch (type) {
           case 'JpegStream':
             imageData = data[3];
-            loadJpegStream(id, imageData, pageProxy.objs);
+            loadJpegStream(id, imageData, opList.objs);
             break;
           case 'Image':
             imageData = data[3];
-            pageProxy.objs.resolve(id, imageData);
+            opList.objs.resolve(id, imageData);
 
             // heuristics that will allow not to store large data
             var MAX_IMAGE_SIZE_TO_STORE = 8000000;
             if (imageData && 'data' in imageData &&
                 imageData.data.length > MAX_IMAGE_SIZE_TO_STORE) {
-              pageProxy.cleanupAfterRender = true;
+              opList.cleanupAfterRender = true;
             }
             break;
           default:
@@ -1028,16 +947,6 @@ var WorkerTransport = (function WorkerTransportClosure() {
             loaded: data.loaded,
             total: data.total
           });
-        }
-      }, this);
-
-      messageHandler.on('PageError', function transportError(data) {
-        var page = this.pageCache[data.pageNum - 1];
-        var intentState = page.intentStates[data.intent];
-        if (intentState.displayReadyCapability) {
-          intentState.displayReadyCapability.reject(data.error);
-        } else {
-          error(data.error);
         }
       }, this);
 
@@ -1184,6 +1093,96 @@ var WorkerTransport = (function WorkerTransportClosure() {
   };
   return WorkerTransport;
 
+})();
+
+var PDFOperatorList = (function PDFOperatorListClosure() {
+  function PDFOperatorList(page, intent) {
+    this._page = page;
+    this._transport = page.transport;
+    this._intent = intent;
+    this._initializedCapability = createPromiseCapability();
+    this._loadedCapability = createPromiseCapability();
+
+    this.fnArray = [];
+    this.argsArray = [];
+    this.lastChunk = false;
+    this.objs = new PDFObjects();
+    this.complete = false;
+    this.onUpdated = null;
+
+    // Some guards against some out-of-sequence onUpdated
+    this._enableOnUpdated = false;
+    this._initializedCapability.promise.then(function () {
+      this._enableOnUpdated = true;
+    }.bind(this));
+    this._loadedCapability.promise.then(function () {
+      this._enableOnUpdated = false;
+    }.bind(this), function (reason) {
+      this._enableOnUpdated = false;
+    }.bind(this));
+
+
+    this.params = null;
+    this.cleanupAfterRender = false;
+
+    this._sendRequest();
+  }
+
+  PDFOperatorList.prototype = {
+    get initialized() {
+      return this._initializedCapability.promise;
+    },
+
+    get loaded() {
+      return this._loadedCapability.promise;
+    },
+
+    destroy: function PDFOperatorList_destroy() {
+
+    },
+
+    _sendRequest: function PDFOperatorList_sendRequest() {
+      var requestId = this._transport.operatorListRequests.length;
+      this._transport.operatorListRequests[requestId] = this;
+      this._requestId = requestId;
+
+      this._transport.messageHandler.send('OperatorListRequest', {
+        pageIndex: this._page.pageIndex,
+        requestId: requestId,
+        intent: this._intent
+      });
+    },
+
+    _initialize: function PDFOperatorList_initialize(params) {
+      this.params = params;
+      this._initializedCapability.resolve();
+    },
+
+    _appendChunk: function PDFOperatorList_appendChunk(operatorListChunk) {
+      var i, ii;
+      // Add the new chunk to the current operator list.
+      for (i = 0, ii = operatorListChunk.length; i < ii; i++) {
+        this.fnArray.push(operatorListChunk.fnArray[i]);
+        this.argsArray.push(operatorListChunk.argsArray[i]);
+      }
+      if (this.onUpdated && this._enableOnUpdated) {
+        this.onUpdated();
+      }
+      if (operatorListChunk.lastChunk) {
+        this.complete = true;
+        this._loadedCapability.resolve();
+        delete this._transport.operatorListRequests[this.requestId];
+      }
+    },
+
+    _fail: function PDFOperatorList_fail(error) {
+      this._initializedCapability.reject(error);
+      this._loadedCapability.reject(error);
+      delete this._transport.operatorListRequests[this.requestId];
+    }
+  };
+
+  return PDFOperatorList;
 })();
 
 /**
@@ -1337,35 +1336,47 @@ var RenderTask = (function RenderTaskClosure() {
  * @ignore
  */
 var InternalRenderTask = (function InternalRenderTaskClosure() {
-
-  function InternalRenderTask(callback, params, objs, commonObjs, operatorList,
+  function InternalRenderTask(params, commonObjs, operatorList,
                               pageNumber) {
-    this.callback = callback;
     this.params = params;
-    this.objs = objs;
+    this.objs = operatorList.objs;
     this.commonObjs = commonObjs;
     this.operatorListIdx = null;
     this.operatorList = operatorList;
     this.pageNumber = pageNumber;
     this.running = false;
-    this.graphicsReadyCallback = null;
-    this.graphicsReady = false;
     this.cancelled = false;
     this.capability = createPromiseCapability();
     // caching this-bound methods
     this._continueBound = this._continue.bind(this);
     this._scheduleNextBound = this._scheduleNext.bind(this);
     this._nextBound = this._next.bind(this);
+
+    this._initializeOperatorList();
   }
 
   InternalRenderTask.prototype = {
-
+    _initializeOperatorList:
+        function InternalRenderTask_initializeOperatorList() {
+      var self = this;
+      this.operatorList.initialized.then(function () {
+        if (self.cancelled) {
+          return;
+        }
+        self.initalizeGraphics(self.operatorList.params.transparency);
+        self.operatorListChanged();
+      }, function (reason) {
+        // If initial operator list fails, don't start rendering
+        self.capability.reject(reason);
+      });
+      this.operatorList.loaded.catch(function (reason) {
+        // If loading of operator list fails, fail rendering
+        self.capability.reject(reason);
+      });
+    },
     initalizeGraphics:
         function InternalRenderTask_initalizeGraphics(transparency) {
 
-      if (this.cancelled) {
-        return;
-      }
       if (PDFJS.pdfBug && 'StepperManager' in globalScope &&
           globalScope.StepperManager.enabled) {
         this.stepper = globalScope.StepperManager.create(this.pageNumber - 1);
@@ -1379,26 +1390,15 @@ var InternalRenderTask = (function InternalRenderTaskClosure() {
 
       this.gfx.beginDrawing(params.viewport, transparency);
       this.operatorListIdx = 0;
-      this.graphicsReady = true;
-      if (this.graphicsReadyCallback) {
-        this.graphicsReadyCallback();
-      }
     },
 
     cancel: function InternalRenderTask_cancel() {
       this.running = false;
       this.cancelled = true;
-      this.callback('cancelled');
+      this.capability.reject('cancelled');
     },
 
     operatorListChanged: function InternalRenderTask_operatorListChanged() {
-      if (!this.graphicsReady) {
-        if (!this.graphicsReadyCallback) {
-          this.graphicsReadyCallback = this._continueBound;
-        }
-        return;
-      }
-
       if (this.stepper) {
         this.stepper.updateOperatorList(this.operatorList);
       }
@@ -1435,9 +1435,10 @@ var InternalRenderTask = (function InternalRenderTaskClosure() {
                                         this.stepper);
       if (this.operatorListIdx === this.operatorList.argsArray.length) {
         this.running = false;
-        if (this.operatorList.lastChunk) {
+        if (this.operatorList.complete) {
           this.gfx.endDrawing();
-          this.callback();
+          // trying to preserve sequence of promises resolutions
+          this.operatorList.loaded.then(this.capability.resolve);
         }
       }
     }

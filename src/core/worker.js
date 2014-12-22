@@ -379,13 +379,14 @@ var WorkerMessageHandler = PDFJS.WorkerMessageHandler = {
       });
     });
 
-    handler.on('RenderPageRequest', function wphSetupRenderPage(data) {
+    handler.on('OperatorListRequest', function wphOperatorListRequest(data) {
       pdfManager.getPage(data.pageIndex).then(function(page) {
 
         var pageNum = data.pageIndex + 1;
         var start = Date.now();
         // Pre compile the pdf page and fetch the fonts/images.
-        page.getOperatorList(handler, data.intent).then(function(operatorList) {
+        page.getOperatorList(handler, data.requestId, data.intent).then(
+            function(operatorList) {
 
           info('page=' + pageNum + ' - getOperatorList: time=' +
                (Date.now() - start) + 'ms, len=' + operatorList.fnArray.length);
@@ -415,10 +416,9 @@ var WorkerMessageHandler = PDFJS.WorkerMessageHandler = {
             };
           }
 
-          handler.send('PageError', {
-            pageNum: pageNum,
+          handler.send('OperatorListError', {
             error: wrappedException,
-            intent: data.intent
+            requestId: data.requestId
           });
         });
       });
