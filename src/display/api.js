@@ -15,11 +15,11 @@
  * limitations under the License.
  */
 /* globals PDFJS, isArrayBuffer, error, combineUrl, createPromiseCapability,
-           StatTimer, globalScope, MessageHandler, info, FontLoader, Util, warn,
+           StatTimer, globalScope, MessageHandler, info, Util, warn,
            Promise, PasswordResponses, PasswordException, InvalidPDFException,
            MissingPDFException, UnknownErrorException, FontFaceObject,
            loadJpegStream, createScratchCanvas, CanvasGraphics,
-           UnexpectedResponseException */
+           UnexpectedResponseException, FontLoaderFactory */
 
 'use strict';
 
@@ -653,6 +653,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
     this.pagePromises = [];
     this.downloadInfoCapability = createPromiseCapability();
     this.passwordCallback = null;
+    this.fontLoader = FontLoaderFactory.createFontLoader();
 
     // If worker support isn't disabled explicit and the browser has worker
     // support, create a new web worker and test if it/the browser fullfills
@@ -713,7 +714,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
       this.pagePromises = [];
       var self = this;
       this.messageHandler.sendWithPromise('Terminate', null).then(function () {
-        FontLoader.clear();
+        self.fontLoader.clear();
         if (self.worker) {
           self.worker.terminate();
         }
@@ -891,16 +892,18 @@ var WorkerTransport = (function WorkerTransportClosure() {
               warn('Error during font loading: ' + error);
               this.commonObjs.resolve(id, error);
               break;
-            } else {
-              font = new FontFaceObject(exportedData);
             }
 
-            FontLoader.bind(
-              [font],
-              function fontReady(fontObjs) {
-                this.commonObjs.resolve(id, font);
-              }.bind(this)
-            );
+            font = new FontFaceObject(exportedData);
+            var fontLoaderPromise;
+            if (font.needsFontFaceRegistration) {
+              fontLoaderPromise = this.fontLoader.load(font);
+            } else {
+              fontLoaderPromise = Promise.resolve(undefined);
+            }
+            fontLoaderPromise.then(function () {
+              this.commonObjs.resolve(id, font);
+            }.bind(this));
             break;
           case 'FontPath':
             this.commonObjs.resolve(id, data[2]);
@@ -1087,7 +1090,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
           }
         }
         this.commonObjs.clear();
-        FontLoader.clear();
+        this.fontLoader.clear();
       }.bind(this));
     }
   };
