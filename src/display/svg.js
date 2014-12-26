@@ -420,13 +420,9 @@ var SVGGraphics = (function SVGGraphicsClosure() {
             var common = obj.substring(0, 2) === 'g_';
             var promise;
             if (common) {
-              promise = new Promise(function(resolve) {
-                self.commonObjs.get(obj, resolve);
-              });
+              promise = this.commonObjs.load(obj);
             } else {
-              promise = new Promise(function(resolve) {
-                self.objs.get(obj, resolve);
-              });
+              promise = this.objs.load(obj);
             }
             this.current.dependencies.push(promise);
           }

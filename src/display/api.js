@@ -258,6 +258,7 @@ var PDFDocumentProxy = (function PDFDocumentProxyClosure() {
   function PDFDocumentProxy(pdfInfo, transport) {
     this.pdfInfo = pdfInfo;
     this.transport = transport;
+    this.fontLoader = FontLoaderFactory.createFontLoader();
   }
   PDFDocumentProxy.prototype = /** @lends PDFDocumentProxy.prototype */ {
     /**
@@ -374,13 +375,17 @@ var PDFDocumentProxy = (function PDFDocumentProxyClosure() {
      * Cleans up resources allocated by the document, e.g. created @font-face.
      */
     cleanup: function PDFDocumentProxy_cleanup() {
-      this.transport.startCleanup();
+      return this.transport.startCleanup().then(function () {
+        this.fontLoader.clear();
+      }.bind(this));
     },
     /**
      * Destroys current document instance and terminates worker.
      */
     destroy: function PDFDocumentProxy_destroy() {
-      this.transport.destroy();
+      return this.transport.destroy().then(function () {
+        this.fontLoader.clear();
+      }.bind(this));
     }
   };
   return PDFDocumentProxy;
@@ -448,13 +453,15 @@ var PDFDocumentProxy = (function PDFDocumentProxyClosure() {
  * @class
  */
 var PDFPageProxy = (function PDFPageProxyClosure() {
-  function PDFPageProxy(pageIndex, pageInfo, transport) {
+  function PDFPageProxy(pageIndex, pageInfo, document) {
     this.pageIndex = pageIndex;
     this.pageInfo = pageInfo;
-    this.transport = transport;
+    this.document = document;
+    this.transport = document.transport;
+    this.fontLoader = document.fontLoader;
     this.stats = new StatTimer();
     this.stats.enabled = !!globalScope.PDFJS.enableStats;
-    this.commonObjs = transport.commonObjs;
+    this.commonObjs = document.transport.commonObjs;
     this.cleanupAfterRender = false;
     this.pendingDestroy = false;
     this.renderingIntentCache = Object.create(null);
@@ -547,7 +554,8 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
       var internalRenderTask = new InternalRenderTask(params,
                                                       this.commonObjs,
                                                       cacheEntry.operatorList,
-                                                      this.pageNumber);
+                                                      this.pageNumber,
+                                                      this.fontLoader);
       cacheEntry.tasks.push(internalRenderTask);
 
       var performsRendering = false;
@@ -570,6 +578,8 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         }
         cacheEntry.tasks.splice(i, 1);
 
+        self.transport.removeFontListener(onFontSend); // see below
+
         if (cacheEntry.operatorList.cleanupAfterRender) {
           self.pendingDestroy = true;
         }
@@ -582,6 +592,15 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
       };
       internalRenderTask.capability.promise.then(onPageRenderComplete,
                                                  onPageRenderComplete);
+
+      // Optimization to eagerly load any font into DOM
+      var onFontSend = function (font) {
+        if (font.needsFontFaceRegistration &&
+            !self.fontLoader.isLoaded(font.loadedName)) {
+          self.fontLoader.load(font);
+        }
+      };
+      this.transport.addFontListener(onFontSend);
 
       return new RenderTask(internalRenderTask);
     },
@@ -653,7 +672,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
     this.pagePromises = [];
     this.downloadInfoCapability = createPromiseCapability();
     this.passwordCallback = null;
-    this.fontLoader = FontLoaderFactory.createFontLoader();
+    this.fontListeners = [];
 
     // If worker support isn't disabled explicit and the browser has worker
     // support, create a new web worker and test if it/the browser fullfills
@@ -713,12 +732,23 @@ var WorkerTransport = (function WorkerTransportClosure() {
       this.pageCache = [];
       this.pagePromises = [];
       var self = this;
-      this.messageHandler.sendWithPromise('Terminate', null).then(function () {
-        self.fontLoader.clear();
+      return this.messageHandler.sendWithPromise('Terminate', null).then(
+          function () {
         if (self.worker) {
           self.worker.terminate();
         }
       });
+    },
+
+    addFontListener: function WorkerTransport_addFontListener(listener) {
+      this.fontListeners.push(listener);
+    },
+
+    removeFontListener: function WorkerTransport_removeFontListener(listener) {
+      var i = this.fontListeners.indexOf(listener);
+      if (i >= 0) {
+        this.fontListeners.splice(i, 1);
+      }
     },
 
     setupFakeWorker: function WorkerTransport_setupFakeWorker() {
@@ -878,7 +908,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
       messageHandler.on('commonobj', function transportObj(data) {
         var id = data[0];
         var type = data[1];
-        if (this.commonObjs.hasData(id)) {
+        if (this.commonObjs.isResolved(id)) {
           return;
         }
 
@@ -895,15 +925,10 @@ var WorkerTransport = (function WorkerTransportClosure() {
             }
 
             font = new FontFaceObject(exportedData);
-            var fontLoaderPromise;
-            if (font.needsFontFaceRegistration) {
-              fontLoaderPromise = this.fontLoader.load(font);
-            } else {
-              fontLoaderPromise = Promise.resolve(undefined);
-            }
-            fontLoaderPromise.then(function () {
-              this.commonObjs.resolve(id, font);
-            }.bind(this));
+            this.commonObjs.resolve(id, font);
+            this.fontListeners.forEach(function (listener) {
+              listener(font);
+            });
             break;
           case 'FontPath':
             this.commonObjs.resolve(id, data[2]);
@@ -919,7 +944,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
         var type = data[2];
         var opList = this.operatorListRequests[requestId];
         var imageData;
-        if (opList.objs.hasData(id)) {
+        if (opList.objs.isResolved(id)) {
           return;
         }
 
@@ -1029,7 +1054,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
       var promise = this.messageHandler.sendWithPromise('GetPage', {
         pageIndex: pageIndex
       }).then(function (pageInfo) {
-        var page = new PDFPageProxy(pageIndex, pageInfo, this);
+        var page = new PDFPageProxy(pageIndex, pageInfo, this.pdfDocument);
         this.pageCache[pageIndex] = page;
         return page;
       }.bind(this));
@@ -1081,7 +1106,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
     },
 
     startCleanup: function WorkerTransport_startCleanup() {
-      this.messageHandler.sendWithPromise('Cleanup', null).
+      return this.messageHandler.sendWithPromise('Cleanup', null).
         then(function endCleanup() {
         for (var i = 0, ii = this.pageCache.length; i < ii; i++) {
           var page = this.pageCache[i];
@@ -1090,7 +1115,6 @@ var WorkerTransport = (function WorkerTransportClosure() {
           }
         }
         this.commonObjs.clear();
-        this.fontLoader.clear();
       }.bind(this));
     }
   };
@@ -1221,24 +1245,21 @@ var PDFObjects = (function PDFObjectsClosure() {
     },
 
     /**
-     * If called *without* callback, this returns the data of `objId` but the
-     * object needs to be resolved. If it isn't, this function throws.
-     *
-     * If called *with* a callback, the callback is called with the data of the
-     * object once the object is resolved. That means, if you call this
-     * function and the object is already resolved, the callback gets called
-     * right away.
+     * Waits for object to be resolved. The returned promise is resolved
+     * with the data of the object.
+     * @param {string} objId
+     * @return {Promise}
      */
-    get: function PDFObjects_get(objId, callback) {
-      // If there is a callback, then the get can be async and the object is
-      // not required to be resolved right now
-      if (callback) {
-        this.ensureObj(objId).capability.promise.then(callback);
-        return null;
-      }
+    load: function PDFObject_load(objId) {
+      return this.ensureObj(objId).capability.promise;
+    },
 
-      // If there isn't a callback, the user expects to get the resolved data
-      // directly.
+    /**
+     * Returns the data of `objId`. The object needs to be resolved.
+     * If it isn't, this function throws.
+     * @param {string} objId
+     */
+    get: function PDFObjects_get(objId) {
       var obj = this.objs[objId];
 
       // If there isn't an object yet or the object isn't resolved, then the
@@ -1269,10 +1290,6 @@ var PDFObjects = (function PDFObjectsClosure() {
       } else {
         return objs[objId].resolved;
       }
-    },
-
-    hasData: function PDFObjects_hasData(objId) {
-      return this.isResolved(objId);
     },
 
     /**
@@ -1340,13 +1357,14 @@ var RenderTask = (function RenderTaskClosure() {
  */
 var InternalRenderTask = (function InternalRenderTaskClosure() {
   function InternalRenderTask(params, commonObjs, operatorList,
-                              pageNumber) {
+                              pageNumber, fontLoader) {
     this.params = params;
     this.objs = operatorList.objs;
     this.commonObjs = commonObjs;
     this.operatorListIdx = null;
     this.operatorList = operatorList;
     this.pageNumber = pageNumber;
+    this.fontLoader = fontLoader;
     this.running = false;
     this.cancelled = false;
     this.capability = createPromiseCapability();
@@ -1389,7 +1407,8 @@ var InternalRenderTask = (function InternalRenderTaskClosure() {
 
       var params = this.params;
       this.gfx = new CanvasGraphics(params.canvasContext, this.commonObjs,
-                                    this.objs, params.imageLayer);
+                                    this.objs, params.imageLayer,
+                                    this.fontLoader);
 
       this.gfx.beginDrawing(params.viewport, transparency);
       this.operatorListIdx = 0;

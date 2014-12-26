@@ -119,7 +119,7 @@ var FontInspector = (function FontInspectorClosure() {
       var download = document.createElement('a');
       if (url) {
         url = /url\(['"]?([^\)"']+)/.exec(url);
-        download.href = url[1];
+        download.href = url;
       } else if (fontObj.data) {
         url = URL.createObjectURL(new Blob([fontObj.data], {
           type: fontObj.mimeType

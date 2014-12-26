@@ -71,39 +71,52 @@ function addFontToPDFBug(font, url) {
 
 var FontLoaderBase = (function FontLoaderBaseClosure() {
   function FontLoaderBase() {
-    this.fontPromises = Object.create(null);
-    this.fontMap = Object.create(null);
+    this._fonts = Object.create(null);
   }
   FontLoaderBase.prototype = {
-    clear: function () {
-      Object.keys(this.fontPromises).forEach(function (fontName) {
-        this.unload(this.fontMap[fontName]);
+    clear: function FontLoaderBase_clear() {
+      Object.keys(this._fonts).forEach(function (fontName) {
+        this.unload(this._fonts[fontName].font);
       }, this);
     },
-    _unloadFromDOM: function (fontName) {
+    _unloadFromDOM: function FontLoaderBase_unloadFromDOM(fontName) {
       throw new Error('abstract method');
     },
-    unload: function (font) {
+    unload: function FontLoaderBase_unload(font) {
       var fontName = font.loadedName;
-      if (!this.fontPromises[fontName]) {
+      if (!this._fonts[fontName]) {
         return;
       }
       this._unloadFromDOM(fontName);
-      delete this.fontMap[fontName];
-      delete this.fontPromises[fontName];
+      delete this._fonts[fontName];
     },
-    _loadIntoDOM: function (fontName, font) {
+    _loadIntoDOM: function FontLoaderBase_loadIntoDOM(fontName, font) {
       throw new Error('abstract method');
     },
-    load: function (font) {
+    load: function FontLoaderBase_load(font) {
       var fontName = font.loadedName;
-      if (this.fontPromises[fontName]) {
-        return this.fontPromises[fontName];
+      if (this._fonts[fontName]) {
+        return this._fonts[fontName].promise;
       }
       var promise = this._loadIntoDOM(fontName, font);
-      this.fontMap[fontName] = font;
-      this.fontPromises[fontName] = promise;
-      return promise;
+      var fontState = {
+        font: font,
+        promise: promise,
+        loadedName: fontName,
+        loaded: false
+      };
+      this._fonts[fontName] = fontState;
+      return promise.then(function () {
+        fontState.loaded = true;
+      });
+    },
+    getDOMFontName: function (fontName) {
+      var fontState = this._fonts[fontName];
+      return fontState ? fontState.loadedName : undefined;
+    },
+    isLoaded: function FontLoaderBase_isLoaded(fontName) {
+      var fontState = this._fonts[fontName];
+      return fontState ? fontState.loaded : false;
     }
   };
   return FontLoaderBase;
@@ -407,7 +420,7 @@ var FontFaceObject = (function FontFaceObjectClosure() {
     },
 
     get needsFontFaceRegistration() {
-      return this.data && !this.disableFontFace && this.loading;
+      return this.data && !this.disableFontFace && this.isFontFace;
     }
   };
   return FontFaceObject;

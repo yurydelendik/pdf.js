@@ -348,7 +348,8 @@ var TilingPattern = (function TilingPatternClosure() {
 
       var tmpCanvas = CachedCanvases.getCanvas('pattern', width, height, true);
       var tmpCtx = tmpCanvas.context;
-      var graphics = new CanvasGraphics(tmpCtx, commonObjs, objs);
+      var graphics = new CanvasGraphics(tmpCtx, commonObjs, objs,
+                                        owner.imageLayer, owner.fontLoader);
       graphics.groupLevel = owner.groupLevel;
 
       this.setFillAndStrokeStyleToContext(tmpCtx, paintType, color);

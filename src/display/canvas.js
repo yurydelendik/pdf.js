@@ -17,7 +17,7 @@
 /* globals error, PDFJS, assert, info, shadow, TextRenderingMode,
            FONT_IDENTITY_MATRIX, Uint32ArrayView, IDENTITY_MATRIX, ImageData,
            ImageKind, isArray, isNum, TilingPattern, OPS, Util, warn,
-           getShadingPatternFromIR, WebGLUtils */
+           getShadingPatternFromIR, WebGLUtils, FontFaceObject, Promise */
 
 'use strict';
 
@@ -410,7 +410,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
   // Defines the number of steps before checking the execution time
   var EXECUTION_STEPS = 10;
 
-  function CanvasGraphics(canvasCtx, commonObjs, objs, imageLayer) {
+  function CanvasGraphics(canvasCtx, commonObjs, objs, imageLayer, fontLoader) {
     this.ctx = canvasCtx;
     this.current = new CanvasExtraState();
     this.stateStack = [];
@@ -421,6 +421,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     this.commonObjs = commonObjs;
     this.objs = objs;
     this.imageLayer = imageLayer;
+    this.fontLoader = fontLoader;
     this.groupStack = [];
     this.processingType3 = null;
     // Patterns are painted relative to the initial page/form transform, see pdf
@@ -734,6 +735,47 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       }
     },
 
+    _resolveDependencies: function CanvasGraphics_resolveDependencies(deps) {
+      var promise = null;
+      for (var n = 0, nn = deps.length; n < nn; n++) {
+        var depObjId = deps[n];
+        var common = depObjId[0] === 'g' && depObjId[1] === '_';
+        var objsPool = common ? this.commonObjs : this.objs;
+
+        // async/promise non-friendly optimization to save few CPU cycles
+        // to make queue execution faster.
+        if (objsPool.isResolved(depObjId)) { // Object is ready
+          var obj = objsPool.get(depObjId);
+          if (!(obj instanceof FontFaceObject)) {
+            continue; // skipping non-fonts
+          }
+          if (!obj.needsFontFaceRegistration ||
+              this.fontLoader.isLoaded(obj.loadedName)) {
+            continue; // skipping loaded in DOM fonts
+          }
+        }
+        // Otherwise waiting for object
+        var nextPromise = objsPool.load(depObjId);
+        if (common) {
+          // Can be a font -- we need to ensure it is loaded in DOM.
+          var self = this;
+          nextPromise = nextPromise.then(function (obj) {
+            if ((obj instanceof FontFaceObject) &&
+                obj.needsFontFaceRegistration &&
+                !self.fontLoader.isLoaded(obj.loadedName)) {
+              return self.fontLoader.load(obj);
+            }
+          });
+        }
+        // Chains dependencies promises
+        promise = (promise || Promise.resolve(undefined)).then(
+            function (nextPromise) {
+          return nextPromise;
+        }.bind(null, nextPromise));
+      }
+      return promise;
+    },
+
     executeOperatorList: function CanvasGraphics_executeOperatorList(
                                     operatorList,
                                     executionStartIdx, continueCallback,
@@ -753,8 +795,6 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var endTime = chunkOperations ? Date.now() + EXECUTION_TIME : 0;
       var steps = 0;
 
-      var commonObjs = this.commonObjs;
-      var objs = this.objs;
       var fnId;
 
       while (true) {
@@ -768,18 +808,11 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         if (fnId !== OPS.dependency) {
           this[fnId].apply(this, argsArray[i]);
         } else {
-          var deps = argsArray[i];
-          for (var n = 0, nn = deps.length; n < nn; n++) {
-            var depObjId = deps[n];
-            var common = depObjId[0] === 'g' && depObjId[1] === '_';
-            var objsPool = common ? commonObjs : objs;
-
-            // If the promise isn't resolved yet, add the continueCallback
-            // to the promise and bail out.
-            if (!objsPool.isResolved(depObjId)) {
-              objsPool.get(depObjId, continueCallback);
-              return i;
-            }
+          var promise = this._resolveDependencies(argsArray[i]);
+          if (promise) {
+            // Needs to wait until dependencies are resolved.
+            promise.then(continueCallback);
+            return i;
           }
         }
 
@@ -1217,7 +1250,8 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         return; // we don't need ctx.font for Type3 fonts
       }
 
-      var name = fontObj.loadedName || 'sans-serif';
+      var fontLoaderName = this.fontLoader.getDOMFontName(fontObj.loadedName);
+      var name = fontLoaderName || fontObj.loadedName || 'sans-serif';
       var bold = fontObj.black ? (fontObj.bold ? 'bolder' : 'bold') :
                                  (fontObj.bold ? 'bold' : 'normal');
 
