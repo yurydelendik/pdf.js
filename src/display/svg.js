@@ -278,6 +278,36 @@ var SVGExtraState = (function SVGExtraStateClosure() {
 })();
 
 var SVGGraphics = (function SVGGraphicsClosure() {
+  function SVGEmbeddedFontLoader(graphics) {
+    this.graphics = graphics;
+    this.embeddedFonts = Object.create(null);
+    this.cssStyle = null;
+  }
+  SVGEmbeddedFontLoader.prototype = {
+    load: function (font) {
+      if (this.embeddedFonts[font.loadedName]) {
+        return this.embeddedFonts[font.loadedName];
+      }
+      if (!this.cssStyle) {
+        this.cssStyle = document.createElementNS(NS, 'svg:style');
+        this.cssStyle.setAttributeNS(null, 'type', 'text/css');
+        this.graphics.defs.appendChild(this.cssStyle);
+      }
+
+      var url = PDFJS.createObjectURL(font.data, font.mimetype);
+      this.cssStyle.textContent +=
+        '@font-face { font-family: "' + font.loadedName + '";' +
+        ' src: url(' + url + '); }\n';
+      return (this.embeddedFonts[font.loadedName] = Promise.resolve(undefined));
+    },
+    getDOMFontName: function (fontName) {
+      if (this.embeddedFonts[fontName]) {
+        return fontName;
+      }
+      return undefined;
+    }
+  };
+
   function createScratchSVG(width, height) {
     var NS = 'http://www.w3.org/2000/svg';
     var svg = document.createElementNS(NS, 'svg:svg');
@@ -366,9 +396,9 @@ var SVGGraphics = (function SVGGraphicsClosure() {
     this.extraStack = [];
     this.pendingEOFill = false;
 
-    this.embedFonts = false;
     this.embeddedFonts = {};
     this.cssStyle = null;
+    this.fontLoader = new SVGEmbeddedFontLoader(this);
   }
 
   var NS = 'http://www.w3.org/2000/svg';
@@ -421,6 +451,13 @@ var SVGGraphics = (function SVGGraphicsClosure() {
             var promise;
             if (common) {
               promise = this.commonObjs.load(obj);
+              // can be a loadable font
+              promise = promise.then(function (obj) {
+                if ((obj instanceof FontFaceObject) &&
+                    obj.needsFontFaceRegistration) {
+                  return self.fontLoader.load(obj);
+                }
+              });
             } else {
               promise = this.objs.load(obj);
             }
@@ -442,6 +479,8 @@ var SVGGraphics = (function SVGGraphicsClosure() {
 
     getSVG: function SVGGraphics_getSVG(operatorList, commonObjs, viewport) {
       this.svg = createScratchSVG(viewport.width, viewport.height);
+      this.defs = document.createElementNS(NS, 'svg:defs');
+      this.svg.appendChild(this.defs);
       this.viewport = viewport;
 
       return this.loadDependencies(operatorList, commonObjs).then(function () {
@@ -450,8 +489,6 @@ var SVGGraphics = (function SVGGraphicsClosure() {
         this.pgrp.setAttributeNS(null, 'transform', pm(viewport.transform));
         this.tgrp = document.createElementNS(NS, 'svg:g'); // Transform group
         this.tgrp.setAttributeNS(null, 'transform', pm(this.transformMatrix));
-        this.defs = document.createElementNS(NS, 'svg:defs');
-        this.pgrp.appendChild(this.defs);
         this.pgrp.appendChild(this.tgrp);
         this.svg.appendChild(this.pgrp);
         var opTree = this.convertOpList(operatorList);
@@ -611,6 +648,9 @@ var SVGGraphics = (function SVGGraphicsClosure() {
           case 92:
             this.group(opTree[x].items);
             break;
+          case OPS.dependency:
+            // noop
+            break;
           default:
             warn('Unimplemented method '+ fn);
             break;
@@ -747,30 +787,11 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       this.moveText(x, y);
     },
 
-    addFontStyle: function SVGGraphics_addFontStyle(fontObj) {
-      if (!this.cssStyle) {
-        this.cssStyle = document.createElementNS(NS, 'svg:style');
-        this.cssStyle.setAttributeNS(null, 'type', 'text/css');
-        this.defs.appendChild(this.cssStyle);
-      }
-
-      var url = PDFJS.createObjectURL(fontObj.data, fontObj.mimetype);
-      this.cssStyle.textContent +=
-        '@font-face { font-family: "' + fontObj.loadedName + '";' +
-        ' src: url(' + url + '); }\n';
-    },
-
     setFont: function SVGGraphics_setFont(details) {
       var current = this.current;
       var fontObj = this.commonObjs.get(details[0]);
       var size = details[1];
       this.current.font = fontObj;
-
-      if (this.embedFonts && fontObj.data &&
-          !this.embeddedFonts[fontObj.loadedName]) {
-        this.addFontStyle(fontObj);
-        this.embeddedFonts[fontObj.loadedName] = fontObj;
-      }
 
       current.fontMatrix = (fontObj.fontMatrix ?
                             fontObj.fontMatrix : FONT_IDENTITY_MATRIX);
@@ -785,8 +806,10 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       } else {
         current.fontDirection = 1;
       }
+      var loadedName = this.fontLoader.getDOMFontName(fontObj.loadedName) ||
+                       fontObj.loadedName;
       current.fontSize = size;
-      current.fontFamily = fontObj.loadedName;
+      current.fontFamily = loadedName;
       current.fontWeight = bold;
       current.fontStyle = italic;
 

@@ -26,6 +26,7 @@ PDFJS.getDocument(url).then(function(pdf) {
   // For testing only.
   var MAX_NUM_PAGES = 50;
   var ii = Math.min(MAX_NUM_PAGES, numPages);
+  var fontLoader = FontLoaderFactory.createFontLoader();
   
   var promise = Promise.resolve();
   for (var i = 1; i <= ii; i++) {
@@ -48,6 +49,7 @@ PDFJS.getDocument(url).then(function(pdf) {
 
         return page.getOperatorList().then(function (opList) {
           var svgGfx = new PDFJS.SVGGraphics();
+          svgGfx.fontLoader = fontLoader;
           return svgGfx.getSVG(opList, page.commonObjs, viewport).then(
               function (svg) {
             container.appendChild(svg);
