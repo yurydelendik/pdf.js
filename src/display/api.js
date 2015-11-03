@@ -1282,6 +1282,38 @@ var PDFWorker = (function PDFWorkerClosure() {
 })();
 PDFJS.PDFWorker = PDFWorker;
 
+var PDFSharedWorker = (function () {
+  function PDFSharedWorker(src, name) {
+    this.destroyed = false;
+    this.promise = new Promise(function (resolve) {
+      var worker = new SharedWorker(src, name);
+      this.port = worker.port;
+      this._sharedWorker = worker;
+      this._messageHandler = new MessageHandler('main', 'worker', worker.port);
+      worker.port.start();
+      resolve();
+    }.bind(this));
+  }
+  PDFSharedWorker.prototype = {
+    destroy: function () {
+      this.destroyed = true;
+      if (this._sharedWorker) {
+        this._sharedWorker.terminate();
+        this._sharedWorker = null;
+      }
+      if (this._messageHandler) {
+        this._messageHandler.destroy();
+        this._messageHandler = null;
+      }
+      this.port = null;
+    },
+
+    fetchDocument: PDFWorker.prototype.fetchDocument
+  };
+  return PDFSharedWorker;
+})();
+PDFJS.PDFSharedWorker = PDFSharedWorker;
+
 /**
  * For internal use only.
  * @ignore

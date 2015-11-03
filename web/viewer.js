@@ -87,6 +87,7 @@ var mozL10n = document.mozL10n || document.webL10n;
 //#include pdf_attachment_view.js
 
 var PDFViewerApplication = {
+  worker: new PDFJS.PDFSharedWorker(PDFJS.workerSrc, 'shared'),
   initialBookmark: document.location.hash.substring(1),
   initialDestination: null,
   initialized: false,
@@ -575,6 +576,8 @@ var PDFViewerApplication = {
 
     var self = this;
     self.downloadComplete = false;
+
+    parameters.worker = PDFViewerApplication.worker;
 
     var loadingTask = PDFJS.getDocument(parameters);
     this.pdfLoadingTask = loadingTask;

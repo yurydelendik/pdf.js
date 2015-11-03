@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 /* globals PDFJS, createPromiseCapability, LocalPdfManager, NetworkPdfManager,
-           NetworkManager, isInt, MissingPDFException,
+           NetworkManager, isInt, MissingPDFException, onconnect,
            UnexpectedResponseException, PasswordException, Promise, warn,
            PasswordResponses, InvalidPDFException, UnknownErrorException,
            XRefParseException, Ref, info, globalScope, error, MessageHandler */
@@ -622,6 +622,13 @@ if (typeof window === 'undefined') {
       data: msg
     });
   });
+
+  onconnect = function (e) {
+    var port = e.ports[0];
+    var handler = new MessageHandler('worker', 'main', port);
+    WorkerMessageHandler.setup(handler, port);
+    port.start();
+  };
 
   var handler = new MessageHandler('worker', 'main', this);
   WorkerMessageHandler.setup(handler, this);

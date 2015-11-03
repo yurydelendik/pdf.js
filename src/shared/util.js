@@ -1518,7 +1518,8 @@ function MessageHandler(sourceName, targetName, comObj) {
 
   this._onComObjOnMessage = function messageHandlerComObjOnMessage(event) {
     var data = event.data;
-    if (data.targetName !== this.sourceName) {
+    if (typeof data !== 'object' || data === null ||
+        data.targetName !== this.sourceName) {
       return;
     }
     if (data.isReply) {
