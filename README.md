@@ -1,5 +1,7 @@
 # PDF.js
 
+[![Join the chat at https://gitter.im/yurydelendik/pdf.js](https://badges.gitter.im/yurydelendik/pdf.js.svg)](https://gitter.im/yurydelendik/pdf.js?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 PDF.js is a Portable Document Format (PDF) viewer that is built with HTML5.
 
 PDF.js is community-driven and supported by Mozilla Labs. Our goal is to
