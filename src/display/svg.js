@@ -816,12 +816,7 @@ var SVGGraphics = (function SVGGraphicsClosure() {
     },
 
     endText: function SVGGraphics_endText() {
-      if (this.current.pendingClip) {
-        this.cgrp.appendChild(this.tgrp);
-        this.svg.appendChild(this.cgrp);
-      } else {
-        this.svg.appendChild(this.tgrp);
-      }
+      this._finishGroup();
       this.tgrp = document.createElementNS(NS, 'svg:g');
       this.tgrp.setAttributeNS(null, 'transform', pm(this.transformMatrix));
     },
@@ -923,12 +918,8 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       current.path.setAttributeNS(null, 'fill', 'none');
 
       this.tgrp.appendChild(current.path);
-      if (current.pendingClip) {
-        this.cgrp.appendChild(this.tgrp);
-        this.svg.appendChild(this.cgrp);
-      } else {
-        this.svg.appendChild(this.tgrp);
-      }
+      this._finishGroup();
+
       // Saving a reference in current.element so that it can be addressed
       // in 'fill' and 'stroke'
       current.element = current.path;
@@ -936,13 +927,7 @@ var SVGGraphics = (function SVGGraphicsClosure() {
     },
 
     endPath: function SVGGraphics_endPath() {
-      var current = this.current;
-      if (current.pendingClip) {
-        this.cgrp.appendChild(this.tgrp);
-        this.svg.appendChild(this.cgrp);
-      } else {
-        this.svg.appendChild(this.tgrp);
-      }
+      this._finishGroup();
       this.tgrp = document.createElementNS(NS, 'svg:g');
       this.tgrp.setAttributeNS(null, 'transform', pm(this.transformMatrix));
     },
@@ -964,7 +949,7 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       this.clippath.appendChild(clipElement);
       this.defs.appendChild(this.clippath);
 
-      // Create a new group with that attribute
+      // Create a clipping group that references the clipping path.
       current.pendingClip = true;
       this.cgrp = document.createElementNS(NS, 'svg:g');
       this.cgrp.setAttributeNS(null, 'clip-path',
@@ -1084,7 +1069,6 @@ var SVGGraphics = (function SVGGraphicsClosure() {
     },
 
     paintJpegXObject: function SVGGraphics_paintJpegXObject(objId, w, h) {
-      var current = this.current;
       var imgObj = this.objs.get(objId);
       var imgEl = document.createElementNS(NS, 'svg:image');
       imgEl.setAttributeNS(XLINK_NS, 'xlink:href', imgObj.src);
@@ -1096,12 +1080,7 @@ var SVGGraphics = (function SVGGraphicsClosure() {
                            'scale(' + pf(1 / w) + ' ' + pf(-1 / h) + ')');
 
       this.tgrp.appendChild(imgEl);
-      if (current.pendingClip) {
-        this.cgrp.appendChild(this.tgrp);
-        this.svg.appendChild(this.cgrp);
-      } else {
-        this.svg.appendChild(this.tgrp);
-      }
+      this._finishGroup();
     },
 
     paintImageXObject: function SVGGraphics_paintImageXObject(objId) {
@@ -1115,7 +1094,6 @@ var SVGGraphics = (function SVGGraphicsClosure() {
 
     paintInlineImageXObject:
         function SVGGraphics_paintInlineImageXObject(imgData, mask) {
-      var current = this.current;
       var width = imgData.width;
       var height = imgData.height;
 
@@ -1125,7 +1103,7 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       cliprect.setAttributeNS(null, 'y', '0');
       cliprect.setAttributeNS(null, 'width', pf(width));
       cliprect.setAttributeNS(null, 'height', pf(height));
-      current.element = cliprect;
+      this.current.element = cliprect;
       this.clip('nonzero');
       var imgEl = document.createElementNS(NS, 'svg:image');
       imgEl.setAttributeNS(XLINK_NS, 'xlink:href', imgSrc);
@@ -1141,12 +1119,7 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       } else {
         this.tgrp.appendChild(imgEl);
       }
-      if (current.pendingClip) {
-        this.cgrp.appendChild(this.tgrp);
-        this.svg.appendChild(this.cgrp);
-      } else {
-        this.svg.appendChild(this.tgrp);
-      }
+      this._finishGroup();
     },
 
     paintImageMaskXObject:
@@ -1196,7 +1169,19 @@ var SVGGraphics = (function SVGGraphicsClosure() {
     },
 
     paintFormXObjectEnd:
-        function SVGGraphics_paintFormXObjectEnd() {}
+        function SVGGraphics_paintFormXObjectEnd() {},
+
+    /**
+     * @private
+     */
+    _finishGroup: function SVGGraphics_finishGroup() {
+      if (this.current.pendingClip) {
+        this.cgrp.appendChild(this.tgrp);
+        this.svg.appendChild(this.cgrp);
+      } else {
+        this.svg.appendChild(this.tgrp);
+      }
+    }
   };
   return SVGGraphics;
 })();
