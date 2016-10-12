@@ -1175,8 +1175,6 @@ var SVGGraphics = (function SVGGraphicsClosure() {
 
     paintFormXObjectBegin:
         function SVGGraphics_paintFormXObjectBegin(matrix, bbox) {
-      this.save();
-
       if (isArray(matrix) && matrix.length === 6) {
         this.transform(matrix[0], matrix[1], matrix[2],
                        matrix[3], matrix[4], matrix[5]);
@@ -1198,9 +1196,7 @@ var SVGGraphics = (function SVGGraphicsClosure() {
     },
 
     paintFormXObjectEnd:
-        function SVGGraphics_paintFormXObjectEnd() {
-      this.restore();
-    }
+        function SVGGraphics_paintFormXObjectEnd() {}
   };
   return SVGGraphics;
 })();
