@@ -411,7 +411,7 @@ var SVGGraphics = (function SVGGraphicsClosure() {
 
       this.tgrp = document.createElementNS(NS, 'svg:g');
       this.tgrp.setAttributeNS(null, 'transform', pm(this.transformMatrix));
-      this.pgrp.appendChild(this.tgrp);
+      this.svg.appendChild(this.tgrp);
     },
 
     group: function SVGGraphics_group(items) {
@@ -464,14 +464,12 @@ var SVGGraphics = (function SVGGraphicsClosure() {
 
       return this.loadDependencies(operatorList).then(function () {
         this.transformMatrix = IDENTITY_MATRIX;
-        this.pgrp = document.createElementNS(NS, 'svg:g'); // Parent group
-        this.pgrp.setAttributeNS(null, 'transform', pm(viewport.transform));
         this.tgrp = document.createElementNS(NS, 'svg:g'); // Transform group
         this.tgrp.setAttributeNS(null, 'transform', pm(this.transformMatrix));
         this.defs = document.createElementNS(NS, 'svg:defs');
-        this.pgrp.appendChild(this.defs);
-        this.pgrp.appendChild(this.tgrp);
-        this.svg.appendChild(this.pgrp);
+        this.svg.setAttributeNS(null, 'transform', pm(viewport.transform));
+        this.svg.appendChild(this.defs);
+        this.svg.appendChild(this.tgrp);
         var opTree = this.convertOpList(operatorList);
         this.executeOpTree(opTree);
         return this.svg;
@@ -820,9 +818,9 @@ var SVGGraphics = (function SVGGraphicsClosure() {
     endText: function SVGGraphics_endText() {
       if (this.current.pendingClip) {
         this.cgrp.appendChild(this.tgrp);
-        this.pgrp.appendChild(this.cgrp);
+        this.svg.appendChild(this.cgrp);
       } else {
-        this.pgrp.appendChild(this.tgrp);
+        this.svg.appendChild(this.tgrp);
       }
       this.tgrp = document.createElementNS(NS, 'svg:g');
       this.tgrp.setAttributeNS(null, 'transform', pm(this.transformMatrix));
@@ -927,9 +925,9 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       this.tgrp.appendChild(current.path);
       if (current.pendingClip) {
         this.cgrp.appendChild(this.tgrp);
-        this.pgrp.appendChild(this.cgrp);
+        this.svg.appendChild(this.cgrp);
       } else {
-        this.pgrp.appendChild(this.tgrp);
+        this.svg.appendChild(this.tgrp);
       }
       // Saving a reference in current.element so that it can be addressed
       // in 'fill' and 'stroke'
@@ -941,9 +939,9 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       var current = this.current;
       if (current.pendingClip) {
         this.cgrp.appendChild(this.tgrp);
-        this.pgrp.appendChild(this.cgrp);
+        this.svg.appendChild(this.cgrp);
       } else {
-        this.pgrp.appendChild(this.tgrp);
+        this.svg.appendChild(this.tgrp);
       }
       this.tgrp = document.createElementNS(NS, 'svg:g');
       this.tgrp.setAttributeNS(null, 'transform', pm(this.transformMatrix));
@@ -971,7 +969,7 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       this.cgrp = document.createElementNS(NS, 'svg:g');
       this.cgrp.setAttributeNS(null, 'clip-path',
                                'url(#' + current.clipId + ')');
-      this.pgrp.appendChild(this.cgrp);
+      this.svg.appendChild(this.cgrp);
     },
 
     closePath: function SVGGraphics_closePath() {
@@ -1100,9 +1098,9 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       this.tgrp.appendChild(imgEl);
       if (current.pendingClip) {
         this.cgrp.appendChild(this.tgrp);
-        this.pgrp.appendChild(this.cgrp);
+        this.svg.appendChild(this.cgrp);
       } else {
-        this.pgrp.appendChild(this.tgrp);
+        this.svg.appendChild(this.tgrp);
       }
     },
 
@@ -1145,9 +1143,9 @@ var SVGGraphics = (function SVGGraphicsClosure() {
       }
       if (current.pendingClip) {
         this.cgrp.appendChild(this.tgrp);
-        this.pgrp.appendChild(this.cgrp);
+        this.svg.appendChild(this.cgrp);
       } else {
-        this.pgrp.appendChild(this.tgrp);
+        this.svg.appendChild(this.tgrp);
       }
     },
 
