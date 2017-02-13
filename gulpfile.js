@@ -782,6 +782,8 @@ gulp.task('mozcentral-pre', ['buildnumber', 'locale'], function () {
     gulp.src(FIREFOX_EXTENSION_DIR + 'tools/l10n.js')
         .pipe(gulp.dest(MOZCENTRAL_CONTENT_DIR + '/web')),
 
+    gulp.src(FIREFOX_CONTENT_DIR + 'pdfjschildbootstrap.js')
+        .pipe(gulp.dest(MOZCENTRAL_CONTENT_DIR)),
     preprocessJS(FIREFOX_CONTENT_DIR + 'PdfJs.jsm', defines, true)
         .pipe(gulp.dest(MOZCENTRAL_CONTENT_DIR)),
     preprocessJS(FIREFOX_CONTENT_DIR + 'PdfStreamConverter.jsm', defines, true)
