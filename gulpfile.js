@@ -110,13 +110,20 @@ function createWebpackConfig(defines, output) {
     module: {
       loaders: [
         {
+          test: /(\bweb\b).*?\.js$/,
+          loader: 'babel-loader',
+          options: {
+            plugins: ['transform-es2015-modules-commonjs']
+          }
+        },
+        {
           loader: path.join(__dirname, 'external/webpack/pdfjsdev-loader.js'),
           options: {
             rootPath: __dirname,
             saveComments: false,
             defines: bundleDefines
           }
-        }
+        },
       ]
     }
   };
@@ -928,6 +935,10 @@ gulp.task('jsdoc', function (done) {
 gulp.task('lib', ['buildnumber'], function () {
   function preprocess(content) {
     content = preprocessor2.preprocessPDFJSCode(ctx, content);
+    content = babel.transform(content, {
+      sourceType: 'module',
+      plugins: ['transform-es2015-modules-commonjs'],
+    }).code;
     var removeCjsSrc =
       /^(var\s+\w+\s*=\s*require\('.*?)(?:\/src)(\/[^']*'\);)$/gm;
     content = content.replace(removeCjsSrc, function (all, prefix, suffix) {
@@ -935,6 +946,7 @@ gulp.task('lib', ['buildnumber'], function () {
     });
     return licenseHeader + content;
   }
+  var babel = require('babel-core');
   var versionInfo = getVersionJSON();
   var ctx = {
     rootPath: __dirname,
