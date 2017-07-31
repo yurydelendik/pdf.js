@@ -1744,6 +1744,10 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         enqueueChunk();
         resolve();
       }).catch((reason) => {
+        if (sink.isCancelled) {
+          // Avoiding messages when operation was cancelled remotely.
+          return;
+        }
         if (this.options.ignoreErrors) {
           // Error(s) in the TextContent -- allow text-extraction to continue.
           warn('getTextContent - ignoring errors during task: ' + task.name);
