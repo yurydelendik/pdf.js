@@ -20,7 +20,10 @@ var globalScope =
   (typeof window !== 'undefined' && window.Math === Math) ? window :
   // eslint-disable-next-line no-undef
   (typeof global !== 'undefined' && global.Math === Math) ? global :
-  (typeof self !== 'undefined' && self.Math === Math) ? self : this;
+  (typeof self !== 'undefined' && self.Math === Math) ? self :
+  (typeof this !== 'undefined' && this.Math === Math) ? this :
+  // eslint-disable-next-line  no-new-func
+  Function('return this;')();
 
 var FONT_IDENTITY_MATRIX = [0.001, 0, 0, 0.001, 0, 0];
 
