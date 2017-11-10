@@ -922,7 +922,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
       return new Promise(function promiseBody(resolve, reject) {
         var next = function (promise) {
-          promise.then(function () {
+          Promise.all([promise, operatorList.ready]).then(function () {
             try {
               promiseBody(resolve, reject);
             } catch (ex) {

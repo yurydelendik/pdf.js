@@ -722,10 +722,10 @@ var WorkerMessageHandler = {
       });
     });
 
-    handler.on('RenderPageRequest', function wphSetupRenderPage(data) {
+    handler.on('GetOperatorList', function wphSetupRenderPage(data, sink) {
       var pageIndex = data.pageIndex;
       pdfManager.getPage(pageIndex).then(function(page) {
-        var task = new WorkerTask('RenderPageRequest: page ' + pageIndex);
+        var task = new WorkerTask('GetOperatorList: page ' + pageIndex);
         startWorkerTask(task);
 
         var pageNum = pageIndex + 1;
@@ -733,14 +733,17 @@ var WorkerMessageHandler = {
         // Pre compile the pdf page and fetch the fonts/images.
         page.getOperatorList({
           handler,
+          sink,
           task,
           intent: data.intent,
           renderInteractiveForms: data.renderInteractiveForms,
-        }).then(function(operatorList) {
+        }).then(function(operatorListInfo) {
           finishWorkerTask(task);
 
           info('page=' + pageNum + ' - getOperatorList: time=' +
-               (Date.now() - start) + 'ms, len=' + operatorList.totalLength);
+               (Date.now() - start) + 'ms, len=' + operatorListInfo.length);
+
+          sink.close();
         }, function(e) {
           finishWorkerTask(task);
           if (task.terminated) {
@@ -780,6 +783,7 @@ var WorkerMessageHandler = {
             error: wrappedException,
             intent: data.intent,
           });
+          sink.error(wrappedException);
         });
       });
     }, this);

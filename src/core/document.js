@@ -194,7 +194,7 @@ var Page = (function PageClosure() {
       });
     },
 
-    getOperatorList({ handler, task, intent, renderInteractiveForms, }) {
+    getOperatorList({ handler, sink, task, intent, renderInteractiveForms, }) {
       var contentStreamPromise = this.pdfManager.ensure(this,
                                                         'getContentStream');
       var resourcesPromise = this.loadResources([
@@ -222,7 +222,7 @@ var Page = (function PageClosure() {
 
       var dataPromises = Promise.all([contentStreamPromise, resourcesPromise]);
       var pageListPromise = dataPromises.then(([contentStream]) => {
-        var opList = new OperatorList(intent, handler, this.pageIndex);
+        var opList = new OperatorList(intent, sink, this.pageIndex);
 
         handler.send('StartRenderPage', {
           transparency: partialEvaluator.hasBlendModes(this.resources),
@@ -246,7 +246,7 @@ var Page = (function PageClosure() {
           function ([pageOpList, annotations]) {
         if (annotations.length === 0) {
           pageOpList.flush(true);
-          return pageOpList;
+          return { length: pageOpList.totalLength, };
         }
 
         // Collect the operator list promises for the annotations. Each promise
@@ -267,7 +267,7 @@ var Page = (function PageClosure() {
           pageOpList.addOp(OPS.endAnnotations, []);
 
           pageOpList.flush(true);
-          return pageOpList;
+          return { length: pageOpList.totalLength, };
         });
       });
     },

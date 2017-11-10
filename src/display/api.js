@@ -841,7 +841,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         };
 
         this.stats.time('Page Request');
-        this.transport.messageHandler.send('RenderPageRequest', {
+        this._pumpOperatorList({
           pageIndex: this.pageNumber - 1,
           intent: renderingIntent,
           renderInteractiveForms: (params.renderInteractiveForms === true),
@@ -861,6 +861,9 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
 
         if (error) {
           internalRenderTask.capability.reject(error);
+          if (intentState.streamReader) {
+            intentState.streamReader.cancel(error);
+          }
         } else {
           internalRenderTask.capability.resolve();
         }
@@ -930,7 +933,7 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
           lastChunk: false,
         };
 
-        this.transport.messageHandler.send('RenderPageRequest', {
+        this._pumpOperatorList({
           pageIndex: this.pageIndex,
           intent: renderingIntent,
         });
@@ -997,11 +1000,15 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
 
       var waitOn = [];
       Object.keys(this.intentStates).forEach(function(intent) {
+        var intentState = this.intentStates[intent];
+        if (intentState.streamReader) {
+          intentState.streamReader.cancel(new Error("Page is destroyed"));
+        }
+
         if (intent === 'oplist') {
           // Avoid errors below, since the renderTasks are just stubs.
           return;
         }
-        var intentState = this.intentStates[intent];
         intentState.renderTasks.forEach(function(renderTask) {
           var renderCompleted = renderTask.capability.promise.
             catch(function () {}); // ignoring failures
@@ -1056,6 +1063,39 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
       if (intentState.displayReadyCapability) {
         intentState.displayReadyCapability.resolve(transparency);
       }
+    },
+    /**
+     * For internal use only.
+     * @ignore
+     */
+    _pumpOperatorList(arg) {
+      const { intent } = arg;
+      const messageHandler = this.transport.messageHandler;
+      const stream = messageHandler.sendWithStream('GetOperatorList', arg);
+      const reader = stream.getReader();
+      this.intentStates[intent].streamReader = reader;
+
+      const pump = () => {
+        reader.read().then(({value, done}) => {
+          if (done) {
+            this.intentStates[intent].streamReader = null;
+            // TODO finalize here
+            return;
+          }
+          if (this.transport.destroyed) {
+            return; // Ignore any pending requests if the worker was terminated.
+          }
+
+          this._renderPageChunk(value.operatorList, intent);
+
+          pump();
+        }, function (reason) {
+          // ignoring -- delivered via PageError
+          // TODO handle errors here
+          this.intentStates[intent].streamReader = null;
+        });
+      };
+      pump();
     },
     /**
      * For internal use only.
@@ -1710,15 +1750,6 @@ var WorkerTransport = (function WorkerTransportClosure() {
 
         page.stats.timeEnd('Page Request');
         page._startRenderPage(data.transparency, data.intent);
-      }, this);
-
-      messageHandler.on('RenderPageChunk', function transportRender(data) {
-        if (this.destroyed) {
-          return; // Ignore any pending requests if the worker was terminated.
-        }
-        var page = this.pageCache[data.pageIndex];
-
-        page._renderPageChunk(data.operatorList, data.intent);
       }, this);
 
       messageHandler.on('commonobj', function transportObj(data) {
